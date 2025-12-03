@@ -1,16 +1,3 @@
-Perfecto, vamos a **arreglar y actualizar el README.md completo** para que:
-
-* quede limpio en Markdown,
-* documente correctamente `STRICT TENSOR` vs `TENSOR`,
-* explique la semántica relajada,
-* quite frases obsoletas (“All tensors must have the same shape”),
-* integre todo sin fragmentos rotos.
-
-Te dejo la versión **final lista para pegar** reemplazando tu README.md entero:
-
----
-
-````md
 # vector-db-rs
 
 `vector-db-rs` is an experimental **in-memory tensor database and DSL engine** written in Rust.
