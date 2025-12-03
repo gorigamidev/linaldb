@@ -1,0 +1,274 @@
+// src/engine.rs
+
+use std::collections::HashMap;
+
+use crate::tensor::{Tensor, TensorId, Shape};
+use crate::store::{InMemoryTensorStore, StoreError};
+use crate::ops::{
+    add,
+    sub,
+    multiply,
+    divide,
+    scalar_mul,
+    dot_1d,
+    cosine_similarity_1d,
+    distance_1d,
+    normalize_1d,
+    add_relaxed,
+    sub_relaxed,
+    multiply_relaxed,
+    divide_relaxed,
+};
+
+
+/// Operaciones binarias de alto nivel
+#[derive(Debug, Clone)]
+pub enum BinaryOp {
+    /// a + b (element-wise)
+    Add,
+    /// a - b (element-wise)
+    Subtract,
+    /// a * b (element-wise)
+    Multiply,
+    /// a / b (element-wise)
+    Divide,
+    /// CORRELATE a WITH b  -> dot(a, b) (rank-1)
+    Correlate,
+    /// SIMILARITY a WITH b -> cosine_similarity(a, b) (rank-1)
+    Similarity,
+    /// DISTANCE a TO b -> distancia L2 (rank-1)
+    Distance,
+}
+
+/// Operaciones unarias
+#[derive(Debug, Clone)]
+pub enum UnaryOp {
+    /// SCALE a BY s
+    Scale(f32),
+    /// NORMALIZE a
+    Normalize,
+}
+
+#[derive(Debug)]
+pub enum EngineError {
+    Store(StoreError),
+    NameNotFound(String),
+    InvalidOp(String),
+}
+
+impl From<StoreError> for EngineError {
+    fn from(e: StoreError) -> Self {
+        EngineError::Store(e)
+    }
+}
+
+impl std::fmt::Display for EngineError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EngineError::Store(e) => write!(f, "Store error: {}", e),
+            EngineError::NameNotFound(name) => write!(f, "Tensor name not found: {}", name),
+            EngineError::InvalidOp(msg) => write!(f, "Invalid operation: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for EngineError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TensorKind {
+    /// Comportamiento por defecto (permite operaciones relajadas)
+    Normal,
+    /// Comportamiento estricto (shapes deben coincidir para element-wise)
+    Strict,
+}
+
+struct NameEntry {
+    id: TensorId,
+    kind: TensorKind,
+}
+
+/// DB de alto nivel que trabaja con nombres y delega en el store
+pub struct TensorDb {
+    store: InMemoryTensorStore,
+    names: HashMap<String, NameEntry>,
+}
+
+impl TensorDb {
+    pub fn new() -> Self {
+        Self {
+            store: InMemoryTensorStore::new(),
+            names: HashMap::new(),
+        }
+    }
+
+    /// Inserta un tensor y lo asocia a un nombre (modo NORMAL por defecto)
+    pub fn insert_named(
+        &mut self,
+        name: impl Into<String>,
+        shape: Shape,
+        data: Vec<f32>,
+    ) -> Result<(), EngineError> {
+        self.insert_named_with_kind(name, shape, data, TensorKind::Normal)
+    }
+
+    /// Inserta un tensor con un "kind" explícito (NORMAL o STRICT)
+    pub fn insert_named_with_kind(
+        &mut self,
+        name: impl Into<String>,
+        shape: Shape,
+        data: Vec<f32>,
+        kind: TensorKind,
+    ) -> Result<(), EngineError> {
+        let id = self.store.insert_tensor(shape, data)?;
+        self.names.insert(
+            name.into(),
+            NameEntry {
+                id,
+                kind,
+            },
+        );
+        Ok(())
+    }
+
+    /// Obtiene un tensor por nombre
+    pub fn get(&self, name: &str) -> Result<&Tensor, EngineError> {
+        let entry = self
+            .names
+            .get(name)
+            .ok_or_else(|| EngineError::NameNotFound(name.to_string()))?;
+        Ok(self.store.get(entry.id)?)
+    }
+
+    /// Obtiene (tensor, kind) por nombre (para decisiones de ejecución)
+    fn get_with_kind(&self, name: &str) -> Result<(&Tensor, TensorKind), EngineError> {
+        let entry = self
+            .names
+            .get(name)
+            .ok_or_else(|| EngineError::NameNotFound(name.to_string()))?;
+        let t = self.store.get(entry.id)?;
+        Ok((t, entry.kind))
+    }
+
+    /// Evalúa operación unaria: SCALE, etc.
+    pub fn eval_unary(
+        &mut self,
+        output_name: impl Into<String>,
+        input_name: &str,
+        op: UnaryOp,
+    ) -> Result<(), EngineError> {
+        let (in_tensor_ref, in_kind) = self.get_with_kind(input_name)?;
+        let in_tensor = in_tensor_ref.clone();
+        let new_id = self.store.gen_id_internal();
+
+        let result = match op {
+            UnaryOp::Scale(s) => scalar_mul(&in_tensor, s, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            UnaryOp::Normalize => normalize_1d(&in_tensor, new_id)
+                .map_err(EngineError::InvalidOp)?,
+        };
+
+        let out_id = self.store.insert_existing_tensor(result)?;
+        self.names.insert(
+            output_name.into(),
+            NameEntry {
+                id: out_id,
+                kind: in_kind, // hereda el modo del input
+            },
+        );
+        Ok(())
+    }
+
+    /// Evalúa operación binaria: ADD, SUBTRACT, CORRELATE, SIMILARITY
+        /// Evalúa operación binaria: ADD, SUBTRACT, CORRELATE, SIMILARITY, DISTANCE
+    pub fn eval_binary(
+        &mut self,
+        output_name: impl Into<String>,
+        left_name: &str,
+        right_name: &str,
+        op: BinaryOp,
+    ) -> Result<(), EngineError> {
+        let (a_ref, kind_a) = self.get_with_kind(left_name)?;
+        let (b_ref, kind_b) = self.get_with_kind(right_name)?;
+        let a = a_ref.clone();
+        let b = b_ref.clone();
+        let new_id = self.store.gen_id_internal();
+
+        // Si alguno es STRICT, el resultado también es STRICT.
+        let out_kind = match (kind_a, kind_b) {
+            (TensorKind::Strict, _) | (_, TensorKind::Strict) => TensorKind::Strict,
+            _ => TensorKind::Normal,
+        };
+
+        let result_tensor = match op {
+            BinaryOp::Add => {
+                match out_kind {
+                    TensorKind::Strict => add(&a, &b, new_id)
+                        .map_err(EngineError::InvalidOp)?,
+                    TensorKind::Normal => add_relaxed(&a, &b, new_id)
+                        .map_err(EngineError::InvalidOp)?,
+                }
+            }
+            BinaryOp::Subtract => {
+                match out_kind {
+                    TensorKind::Strict => sub(&a, &b, new_id)
+                        .map_err(EngineError::InvalidOp)?,
+                    TensorKind::Normal => sub_relaxed(&a, &b, new_id)
+                        .map_err(EngineError::InvalidOp)?,
+                }
+            }
+            BinaryOp::Multiply => {
+                match out_kind {
+                    TensorKind::Strict => multiply(&a, &b, new_id)
+                        .map_err(EngineError::InvalidOp)?,
+                    TensorKind::Normal => multiply_relaxed(&a, &b, new_id)
+                        .map_err(EngineError::InvalidOp)?,
+                }
+            }
+            BinaryOp::Divide => {
+                match out_kind {
+                    TensorKind::Strict => divide(&a, &b, new_id)
+                        .map_err(EngineError::InvalidOp)?,
+                    TensorKind::Normal => divide_relaxed(&a, &b, new_id)
+                        .map_err(EngineError::InvalidOp)?,
+                }
+            }
+            BinaryOp::Correlate => {
+                // CORRELATE = dot → escalar (sigue siendo estricto en shape)
+                let value = dot_1d(&a, &b).map_err(EngineError::InvalidOp)?;
+                let shape = Shape::new(Vec::<usize>::new());
+                let data = vec![value];
+                Tensor::new(new_id, shape, data)
+                    .map_err(EngineError::InvalidOp)?
+            }
+            BinaryOp::Similarity => {
+                let value = cosine_similarity_1d(&a, &b).map_err(EngineError::InvalidOp)?;
+                let shape = Shape::new(Vec::<usize>::new());
+                let data = vec![value];
+                Tensor::new(new_id, shape, data)
+                    .map_err(EngineError::InvalidOp)?
+            }
+            BinaryOp::Distance => {
+                let value = distance_1d(&a, &b).map_err(EngineError::InvalidOp)?;
+                let shape = Shape::new(Vec::<usize>::new());
+                let data = vec![value];
+                Tensor::new(new_id, shape, data)
+                    .map_err(EngineError::InvalidOp)?
+            }
+        };
+
+        let out_id = self.store.insert_existing_tensor(result_tensor)?;
+        self.names.insert(
+            output_name.into(),
+            NameEntry {
+                id: out_id,
+                kind: out_kind,
+            },
+        );
+        Ok(())
+    }
+
+    /// Para debug: todos los nombres registrados
+    pub fn list_names(&self) -> Vec<String> {
+        self.names.keys().cloned().collect()
+    }
+}

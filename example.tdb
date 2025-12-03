@@ -1,0 +1,59 @@
+# ==========================================
+# TensorDB – Example Script (Strict vs Normal)
+# ==========================================
+
+# --- Tensores STRICT (shapes deben coincidir)
+DEFINE a_strict       AS STRICT TENSOR [3] VALUES [1, 2, 3]
+DEFINE b_strict_same  AS STRICT TENSOR [3] VALUES [10, 20, 30]
+
+# --- Tensores normales (TENSOR) – más flexibles
+DEFINE b_long   AS TENSOR [5] VALUES [10, 20, 30, 40, 50]
+DEFINE v3       AS TENSOR [3] VALUES [1, 1, 1]
+DEFINE v5       AS TENSOR [5] VALUES [1, 1, 1, 1, 1]
+
+# --- Caso 1: STRICT + STRICT con misma shape -> OK
+# Resultado: [11, 22, 33]
+LET strict_ok = ADD a_strict b_strict_same
+
+# --- Caso 2: STRICT + NORMAL con distinta shape -> ERROR
+# a_strict es STRICT [3]
+# b_long   es NORMAL [5]
+# Como uno es STRICT, la operación se ejecuta en modo estricto
+# y debe lanzar: Invalid operation: Shape mismatch: [3] vs [5]
+LET strict_fail = ADD a_strict b_long
+
+# --- Caso 3: NORMAL + NORMAL con distinta longitud -> RELAXED
+# v3 = [1, 1, 1]
+# v5 = [1, 1, 1, 1, 1]
+# ADD v3 v5 en modo relajado:
+#   => [2, 2, 2, 1, 1]   (los que faltan se rellenan con 0 en el más corto)
+LET relaxed_ok = ADD v3 v5
+
+# --- Otro ejemplo "normal" de features / métricas
+DEFINE u AS TENSOR [3] VALUES [1, 0, 0]
+DEFINE w AS TENSOR [3] VALUES [1, 1, 0]
+
+LET corr_uw = CORRELATE u WITH w
+LET sim_uw  = SIMILARITY u WITH w
+LET dist_uw = DISTANCE u TO w
+LET w_norm  = NORMALIZE w
+
+# --- Mostrar tensores base
+SHOW a_strict
+SHOW b_strict_same
+SHOW b_long
+SHOW v3
+SHOW v5
+SHOW u
+SHOW w
+
+# --- Mostrar resultados válidos
+SHOW strict_ok
+SHOW relaxed_ok
+SHOW corr_uw
+SHOW sim_uw
+SHOW dist_uw
+SHOW w_norm
+
+# --- Dump completo de todo lo que sobrevivió
+SHOW ALL
