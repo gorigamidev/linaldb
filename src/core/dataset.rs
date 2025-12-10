@@ -1,7 +1,7 @@
 // src/dataset.rs
 
-use crate::tuple::{Schema, Tuple};
-use crate::value::{Value, ValueType};
+use super::tuple::{Schema, Tuple};
+use super::value::{Value, ValueType};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -303,7 +303,7 @@ impl Dataset {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tuple::Field;
+    use crate::core::tuple::Field;
 
     fn create_test_schema() -> Arc<Schema> {
         Arc::new(Schema::new(vec![

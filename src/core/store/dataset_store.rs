@@ -1,6 +1,6 @@
 // src/dataset_store.rs
 
-use crate::dataset::{Dataset, DatasetId};
+use crate::core::dataset::{Dataset, DatasetId};
 use std::collections::HashMap;
 
 /// Error types for dataset store operations
@@ -163,8 +163,8 @@ impl Default for DatasetStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tuple::{Field, Schema};
-    use crate::value::ValueType;
+    use crate::core::tuple::{Field, Schema};
+    use crate::core::value::ValueType;
     use std::sync::Arc;
 
     fn create_test_dataset(id: DatasetId) -> Dataset {

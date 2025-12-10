@@ -1,6 +1,6 @@
 // src/tuple.rs
 
-use crate::value::{Value, ValueType};
+use super::value::{Value, ValueType};
 use std::collections::HashMap;
 use std::sync::Arc;
 

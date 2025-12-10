@@ -1,21 +1,27 @@
 // src/lib.rs
 
-pub mod dataset;
-pub mod dataset_store;
+pub mod core;
+
 pub mod dsl;
 pub mod engine;
-pub mod ops;
-pub mod store;
-pub mod tensor;
-pub mod tuple;
-pub mod value;
+pub mod utils;
+
+// Re-exports replacing legacy modules with core aliases
+pub use core::dataset;
+pub use core::store as dataset_store;
+pub use core::store;
+pub use core::tensor;
+pub use core::tuple;
+pub use core::value;
 
 // Re-exports para tener una API limpia desde fuera del crate
 pub use dataset::{ColumnStats, Dataset, DatasetId, DatasetMetadata};
 pub use dataset_store::{DatasetStore, DatasetStoreError};
 pub use dsl::{execute_line, execute_script, DslError};
 pub use engine::{BinaryOp, EngineError, TensorDb, TensorKind, UnaryOp};
-pub use ops::{
+// Re-export kernels as ops for compatibility
+pub use engine::kernels as ops;
+pub use engine::kernels::{
     add,
     add_relaxed,
     cosine_similarity_1d,

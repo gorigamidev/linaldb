@@ -1,6 +1,6 @@
 // src/store.rs
 
-use crate::tensor::{Tensor, TensorId, Shape};
+use crate::core::tensor::{Shape, Tensor, TensorId};
 
 #[derive(Debug)]
 pub enum StoreError {

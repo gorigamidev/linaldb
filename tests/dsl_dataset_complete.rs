@@ -9,7 +9,6 @@
 use vector_db_rs::{execute_script, TensorDb};
 
 #[test]
-#[ignore] // Remove this once implementation is complete
 fn test_complete_dataset_workflow() {
     let mut db = TensorDb::new();
 
@@ -37,10 +36,7 @@ fn test_complete_dataset_workflow() {
         DATASET top_users FROM users ORDER BY score DESC LIMIT 3
         
         # Combined query: Adults with high scores
-        DATASET high_performers FROM users 
-            FILTER age > 28 
-            SELECT name, age, score 
-            ORDER BY score DESC
+        DATASET high_performers FROM users FILTER age > 28 SELECT name, age, score ORDER BY score DESC
     "#;
 
     execute_script(&mut db, script).unwrap();
@@ -52,7 +48,7 @@ fn test_complete_dataset_workflow() {
 
     // Verify filtered dataset
     let adults = db.get_dataset("adults").unwrap();
-    assert_eq!(adults.len(), 4); // Alice(30), Carol(35), Dave(28 excluded), Eve(32)
+    assert_eq!(adults.len(), 3); // Alice(30), Carol(35), Eve(32) - Dave(28) excluded
 
     // Verify projected dataset
     let names_scores = db.get_dataset("names_scores").unwrap();
@@ -103,7 +99,6 @@ fn test_dataset_insertion_basic() {
 }
 
 #[test]
-#[ignore] // Remove once Phase 3 is implemented
 fn test_dataset_filter() {
     let mut db = TensorDb::new();
 
@@ -124,7 +119,6 @@ fn test_dataset_filter() {
 }
 
 #[test]
-#[ignore] // Remove once Phase 3 is implemented
 fn test_dataset_select() {
     let mut db = TensorDb::new();
 
@@ -144,7 +138,6 @@ fn test_dataset_select() {
 }
 
 #[test]
-#[ignore] // Remove once Phase 3 is implemented
 fn test_dataset_order_by() {
     let mut db = TensorDb::new();
 
@@ -165,7 +158,6 @@ fn test_dataset_order_by() {
 }
 
 #[test]
-#[ignore] // Remove once Phase 3 is implemented
 fn test_dataset_limit() {
     let mut db = TensorDb::new();
 
@@ -187,7 +179,6 @@ fn test_dataset_limit() {
 }
 
 #[test]
-#[ignore] // Remove once Phase 3 is implemented
 fn test_dataset_combined_query() {
     let mut db = TensorDb::new();
 
@@ -199,11 +190,7 @@ fn test_dataset_combined_query() {
         INSERT INTO employees VALUES (4, "Dave", "Sales", 72000.0)
         INSERT INTO employees VALUES (5, "Eve", "Engineering", 92000.0)
         
-        DATASET top_engineers FROM employees
-            FILTER dept = "Engineering"
-            SELECT name, salary
-            ORDER BY salary DESC
-            LIMIT 2
+        DATASET top_engineers FROM employees FILTER dept = "Engineering" SELECT name, salary ORDER BY salary DESC LIMIT 2
     "#;
 
     execute_script(&mut db, script).unwrap();

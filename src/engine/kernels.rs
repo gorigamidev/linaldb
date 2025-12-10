@@ -1,6 +1,6 @@
-// src/ops.rs
+// src/engine/kernels.rs
 
-use crate::tensor::{Shape, Tensor, TensorId};
+use crate::core::tensor::{Shape, Tensor, TensorId};
 
 /// Estrategia para combinar dos tensores en una operación elemento a elemento.
 /// Soporta:

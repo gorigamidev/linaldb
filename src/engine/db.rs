@@ -1,93 +1,19 @@
-// src/engine.rs
-
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use crate::dataset::{Dataset, DatasetId};
-use crate::dataset_store::{DatasetStore, DatasetStoreError};
-use crate::ops::{
+use crate::core::dataset::{Dataset, DatasetId};
+use crate::core::store::{DatasetStore, InMemoryTensorStore};
+use crate::core::tensor::{Shape, Tensor, TensorId};
+use crate::core::tuple::{Schema, Tuple};
+
+use super::kernels::{
     add, add_relaxed, cosine_similarity_1d, distance_1d, divide, divide_relaxed, dot_1d, flatten,
     matmul, multiply, multiply_relaxed, normalize_1d, reshape, scalar_mul, sub, sub_relaxed,
     transpose,
 };
-use crate::store::{InMemoryTensorStore, StoreError};
-use crate::tensor::{Shape, Tensor, TensorId};
-use crate::tuple::{Schema, Tuple};
-use std::sync::Arc;
 
-/// Operaciones binarias de alto nivel
-#[derive(Debug, Clone)]
-pub enum BinaryOp {
-    /// a + b (element-wise)
-    Add,
-    /// a - b (element-wise)
-    Subtract,
-    /// a * b (element-wise)
-    Multiply,
-    /// a / b (element-wise)
-    Divide,
-    /// CORRELATE a WITH b  -> dot(a, b) (rank-1)
-    Correlate,
-    /// SIMILARITY a WITH b -> cosine_similarity(a, b) (rank-1)
-    Similarity,
-    /// DISTANCE a TO b -> distancia L2 (rank-1)
-    Distance,
-}
-
-/// Operaciones unarias
-#[derive(Debug, Clone)]
-pub enum UnaryOp {
-    /// SCALE a BY s
-    Scale(f32),
-    /// NORMALIZE a
-    Normalize,
-    /// TRANSPOSE a (matrix transpose)
-    Transpose,
-    /// FLATTEN a (flatten to 1D)
-    Flatten,
-}
-
-#[derive(Debug)]
-pub enum EngineError {
-    Store(StoreError),
-    NameNotFound(String),
-    InvalidOp(String),
-    DatasetError(DatasetStoreError),
-    DatasetNotFound(String),
-}
-
-impl From<StoreError> for EngineError {
-    fn from(e: StoreError) -> Self {
-        EngineError::Store(e)
-    }
-}
-
-impl From<DatasetStoreError> for EngineError {
-    fn from(e: DatasetStoreError) -> Self {
-        EngineError::DatasetError(e)
-    }
-}
-
-impl std::fmt::Display for EngineError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EngineError::Store(e) => write!(f, "Store error: {}", e),
-            EngineError::NameNotFound(name) => write!(f, "Tensor name not found: {}", name),
-            EngineError::InvalidOp(msg) => write!(f, "Invalid operation: {}", msg),
-            EngineError::DatasetError(e) => write!(f, "Dataset error: {}", e),
-            EngineError::DatasetNotFound(name) => write!(f, "Dataset not found: {}", name),
-        }
-    }
-}
-
-impl std::error::Error for EngineError {}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TensorKind {
-    /// Comportamiento por defecto (permite operaciones relajadas)
-    Normal,
-    /// Comportamiento estricto (shapes deben coincidir para element-wise)
-    Strict,
-}
+use super::error::EngineError;
+use super::operations::{BinaryOp, TensorKind, UnaryOp};
 
 struct NameEntry {
     id: TensorId,
@@ -143,7 +69,7 @@ impl TensorDb {
     }
 
     /// Obtiene (tensor, kind) por nombre (para decisiones de ejecución)
-    fn get_with_kind(&self, name: &str) -> Result<(&Tensor, TensorKind), EngineError> {
+    pub(crate) fn get_with_kind(&self, name: &str) -> Result<(&Tensor, TensorKind), EngineError> {
         let entry = self
             .names
             .get(name)
@@ -185,7 +111,6 @@ impl TensorDb {
         Ok(())
     }
 
-    /// Evalúa operación binaria: ADD, SUBTRACT, CORRELATE, SIMILARITY
     /// Evalúa operación binaria: ADD, SUBTRACT, CORRELATE, SIMILARITY, DISTANCE
     pub fn eval_binary(
         &mut self,
