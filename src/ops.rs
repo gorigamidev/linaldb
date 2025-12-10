@@ -1,7 +1,6 @@
 // src/ops.rs
 
-use crate::tensor::{Tensor, TensorId, Shape};
-
+use crate::tensor::{Shape, Tensor, TensorId};
 
 /// Estrategia para combinar dos tensores en una operación elemento a elemento.
 /// Soporta:
@@ -133,12 +132,7 @@ pub fn dot_1d(a: &Tensor, b: &Tensor) -> Result<f32, String> {
     }
     ensure_same_shape(&a.shape, &b.shape)?;
 
-    let sum = a
-        .data
-        .iter()
-        .zip(b.data.iter())
-        .map(|(x, y)| x * y)
-        .sum();
+    let sum = a.data.iter().zip(b.data.iter()).map(|(x, y)| x * y).sum();
 
     Ok(sum)
 }
@@ -251,10 +245,200 @@ pub fn divide_relaxed(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor
     )
 }
 
+// ============================================================================
+// MATRIX OPERATIONS (Rank-2 Tensors)
+// ============================================================================
+
+/// Matrix multiplication: C = A * B
+/// A: [m, n], B: [n, p] → C: [m, p]
+pub fn matmul(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    if a.shape.rank() != 2 || b.shape.rank() != 2 {
+        return Err("matmul expects rank-2 tensors (matrices)".into());
+    }
+
+    let m = a.shape.dims[0];
+    let n = a.shape.dims[1];
+    let n2 = b.shape.dims[0];
+    let p = b.shape.dims[1];
+
+    if n != n2 {
+        return Err(format!(
+            "Matrix dimension mismatch: A is [{}x{}], B is [{}x{}]. Inner dimensions must match.",
+            m, n, n2, p
+        ));
+    }
+
+    let mut data = vec![0.0; m * p];
+
+    for i in 0..m {
+        for j in 0..p {
+            let mut sum = 0.0;
+            for k in 0..n {
+                let a_val = a.data[i * n + k];
+                let b_val = b.data[k * p + j];
+                sum += a_val * b_val;
+            }
+            data[i * p + j] = sum;
+        }
+    }
+
+    let shape = Shape::new(vec![m, p]);
+    Tensor::new(new_id, shape, data)
+}
+
+/// Transpose a rank-2 tensor (matrix)
+/// A: [m, n] → A^T: [n, m]
+pub fn transpose(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    if a.shape.rank() != 2 {
+        return Err("transpose expects rank-2 tensor (matrix)".into());
+    }
+
+    let m = a.shape.dims[0];
+    let n = a.shape.dims[1];
+
+    let mut data = vec![0.0; m * n];
+
+    for i in 0..m {
+        for j in 0..n {
+            data[j * m + i] = a.data[i * n + j];
+        }
+    }
+
+    let shape = Shape::new(vec![n, m]);
+    Tensor::new(new_id, shape, data)
+}
+
+/// Reshape a tensor to a new shape (total elements must match)
+pub fn reshape(a: &Tensor, new_shape: Shape, new_id: TensorId) -> Result<Tensor, String> {
+    let old_elements = a.shape.num_elements();
+    let new_elements = new_shape.num_elements();
+
+    if old_elements != new_elements {
+        return Err(format!(
+            "Cannot reshape: old shape {:?} has {} elements, new shape {:?} has {} elements",
+            a.shape.dims, old_elements, new_shape.dims, new_elements
+        ));
+    }
+
+    Tensor::new(new_id, new_shape, a.data.clone())
+}
+
+/// Flatten a tensor to rank-1 (vector)
+pub fn flatten(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    let total_elements = a.shape.num_elements();
+    let shape = Shape::new(vec![total_elements]);
+    Tensor::new(new_id, shape, a.data.clone())
+}
+
+/// Slice a tensor along a dimension
+/// Returns a new tensor with elements from start (inclusive) to end (exclusive)
+pub fn slice(
+    a: &Tensor,
+    dim: usize,
+    start: usize,
+    end: usize,
+    new_id: TensorId,
+) -> Result<Tensor, String> {
+    if dim >= a.shape.rank() {
+        return Err(format!(
+            "Dimension {} out of bounds for tensor with rank {}",
+            dim,
+            a.shape.rank()
+        ));
+    }
+
+    if start >= end {
+        return Err(format!(
+            "Invalid slice range: start {} >= end {}",
+            start, end
+        ));
+    }
+
+    if end > a.shape.dims[dim] {
+        return Err(format!(
+            "Slice end {} exceeds dimension size {}",
+            end, a.shape.dims[dim]
+        ));
+    }
+
+    match a.shape.rank() {
+        1 => {
+            // Simple vector slice
+            let data = a.data[start..end].to_vec();
+            let shape = Shape::new(vec![end - start]);
+            Tensor::new(new_id, shape, data)
+        }
+        2 => {
+            // Matrix slice
+            let rows = a.shape.dims[0];
+            let cols = a.shape.dims[1];
+
+            if dim == 0 {
+                // Slice rows
+                let new_rows = end - start;
+                let mut data = Vec::with_capacity(new_rows * cols);
+                for i in start..end {
+                    for j in 0..cols {
+                        data.push(a.data[i * cols + j]);
+                    }
+                }
+                let shape = Shape::new(vec![new_rows, cols]);
+                Tensor::new(new_id, shape, data)
+            } else {
+                // Slice columns
+                let new_cols = end - start;
+                let mut data = Vec::with_capacity(rows * new_cols);
+                for i in 0..rows {
+                    for j in start..end {
+                        data.push(a.data[i * cols + j]);
+                    }
+                }
+                let shape = Shape::new(vec![rows, new_cols]);
+                Tensor::new(new_id, shape, data)
+            }
+        }
+        _ => Err(format!(
+            "Slice not yet implemented for rank-{} tensors",
+            a.shape.rank()
+        )),
+    }
+}
+
+/// Index into a tensor to get a single element
+pub fn index(a: &Tensor, indices: &[usize]) -> Result<f32, String> {
+    if indices.len() != a.shape.rank() {
+        return Err(format!(
+            "Index dimension mismatch: tensor has rank {}, got {} indices",
+            a.shape.rank(),
+            indices.len()
+        ));
+    }
+
+    // Check bounds
+    for (i, &idx) in indices.iter().enumerate() {
+        if idx >= a.shape.dims[i] {
+            return Err(format!(
+                "Index {} out of bounds for dimension {} (size {})",
+                idx, i, a.shape.dims[i]
+            ));
+        }
+    }
+
+    // Compute flat index
+    let mut flat_idx = 0;
+    let mut stride = 1;
+    for i in (0..a.shape.rank()).rev() {
+        flat_idx += indices[i] * stride;
+        stride *= a.shape.dims[i];
+    }
+
+    Ok(a.data[flat_idx])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor::{Tensor, TensorId, Shape};
+    use crate::tensor::{Shape, Tensor, TensorId};
 
     fn tensor_1d(id: u64, vals: Vec<f32>) -> Tensor {
         let shape = Shape::new(vec![vals.len()]);
@@ -293,7 +477,8 @@ mod tests {
         assert!((sim - expected_sim).abs() < 1e-6);
 
         let dist = distance_1d(&a, &b).unwrap();
-        let expected_dist = ((1.0_f32 - 1.0_f32).powi(2) + (0.0_f32 - 1.0_f32).powi(2) + 0.0f32).sqrt();
+        let expected_dist =
+            ((1.0_f32 - 1.0_f32).powi(2) + (0.0_f32 - 1.0_f32).powi(2) + 0.0f32).sqrt();
         assert!((dist - expected_dist).abs() < 1e-6);
 
         let n = normalize_1d(&b, TensorId(3)).unwrap();

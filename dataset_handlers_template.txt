@@ -1,0 +1,219 @@
+
+/// DATASET name COLUMNS (col1: TYPE1, col2: TYPE2, ...)
+fn handle_dataset(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+    use crate::tuple::{Field, Schema};
+    use crate::value::ValueType;
+    use std::sync::Arc;
+
+    let rest = line.trim_start_matches("DATASET").trim();
+    
+    // Split into name and columns part
+    let parts: Vec<&str> = rest.splitn(2, "COLUMNS").collect();
+    if parts.len() != 2 {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected: DATASET name COLUMNS (col1: TYPE1, col2: TYPE2, ...)".into(),
+        });
+    }
+
+    let name = parts[0].trim().to_string();
+    let columns_str = parts[1].trim();
+    
+    // Parse column definitions: (col1: TYPE1, col2: TYPE2, ...)
+    let fields = parse_column_definitions(columns_str, line_no)?;
+    let schema = Arc::new(Schema::new(fields));
+    
+    db.create_dataset(name.clone(), schema)
+        .map_err(|e| DslError::Engine { line: line_no, source: e })?;
+    
+    println!("Created dataset: {}", name);
+    Ok(())
+}
+
+/// Parse column definitions from: (col1: TYPE1, col2: TYPE2, ...)
+fn parse_column_definitions(columns_str: &str, line_no: usize) -> Result<Vec<Field>, DslError> {
+    use crate::tuple::Field;
+    
+    // Remove parentheses
+    let inner = columns_str.trim().trim_start_matches('(').trim_end_matches(')').trim();
+    
+    if inner.is_empty() {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Empty column definition".into(),
+        });
+    }
+    
+    let mut fields = Vec::new();
+    
+    // Split by comma
+    for col_def in inner.split(',') {
+        let col_def = col_def.trim();
+        
+        // Split by colon: name: TYPE
+        let parts: Vec<&str> = col_def.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            return Err(DslError::Parse {
+                line: line_no,
+                msg: format!("Invalid column definition: {}", col_def),
+            });
+        }
+        
+        let col_name = parts[0].trim();
+        let type_str = parts[1].trim();
+        
+        let value_type = parse_value_type(type_str, line_no)?;
+        fields.push(Field::new(col_name, value_type));
+    }
+    
+    Ok(fields)
+}
+
+/// Parse a value type from string
+fn parse_value_type(type_str: &str, line_no: usize) -> Result<ValueType, DslError> {
+    use crate::value::ValueType;
+    
+    match type_str.to_uppercase().as_str() {
+        "INT" => Ok(ValueType::Int),
+        "FLOAT" => Ok(ValueType::Float),
+        "STRING" => Ok(ValueType::String),
+        "BOOL" => Ok(ValueType::Bool),
+        _ => Err(DslError::Parse {
+            line: line_no,
+            msg: format!("Unknown type: {}", type_str),
+        }),
+    }
+}
+
+/// INSERT INTO dataset_name VALUES (val1, val2, ...)
+fn handle_insert(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+    use crate::tuple::Tuple;
+    
+    let rest = line.trim_start_matches("INSERT INTO").trim();
+    
+    // Split into dataset_name and values part
+    let parts: Vec<&str> = rest.splitn(2, "VALUES").collect();
+    if parts.len() != 2 {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected: INSERT INTO dataset_name VALUES (val1, val2, ...)".into(),
+        });
+    }
+
+    let dataset_name = parts[0].trim();
+    let values_str = parts[1].trim();
+    
+    // Get dataset to know schema
+    let dataset = db.get_dataset(dataset_name)
+        .map_err(|e| DslError::Engine { line: line_no, source: e })?;
+    let schema = dataset.schema.clone();
+    
+    // Parse values
+    let values = parse_tuple_values(values_str, &schema, line_no)?;
+    let tuple = Tuple::new(schema.clone(), values)
+        .map_err(|e| DslError::Parse { line: line_no, msg: e })?;
+    
+    db.insert_row(dataset_name, tuple)
+        .map_err(|e| DslError::Engine { line: line_no, source: e })?;
+    
+    Ok(())
+}
+
+/// Parse tuple values from: (val1, val2, ...)
+fn parse_tuple_values(values_str: &str, schema: &Schema, line_no: usize) -> Result<Vec<Value>, DslError> {
+    use crate::value::Value;
+    
+    // Remove parentheses
+    let inner = values_str.trim().trim_start_matches('(').trim_end_matches(')').trim();
+    
+    if inner.is_empty() {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Empty values".into(),
+        });
+    }
+    
+    let mut values = Vec::new();
+    let mut current = String::new();
+    let mut in_string = false;
+    let mut depth = 0;
+    
+    // Parse values, handling strings and nested structures
+    for ch in inner.chars() {
+        match ch {
+            '"' => {
+                in_string = !in_string;
+                current.push(ch);
+            }
+            '[' | '(' if !in_string => {
+                depth += 1;
+                current.push(ch);
+            }
+            ']' | ')' if !in_string => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if !in_string && depth == 0 => {
+                values.push(parse_single_value(&current.trim(), line_no)?);
+                current.clear();
+            }
+            _ => {
+                current.push(ch);
+            }
+        }
+    }
+    
+    // Don't forget the last value
+    if !current.trim().is_empty() {
+        values.push(parse_single_value(&current.trim(), line_no)?);
+    }
+    
+    // Validate count matches schema
+    if values.len() != schema.len() {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: format!("Expected {} values, got {}", schema.len(), values.len()),
+        });
+    }
+    
+    Ok(values)
+}
+
+/// Parse a single value
+fn parse_single_value(s: &str, line_no: usize) -> Result<Value, DslError> {
+    use crate::value::Value;
+    
+    let s = s.trim();
+    
+    // String (quoted)
+    if s.starts_with('"') && s.ends_with('"') {
+        let content = &s[1..s.len()-1];
+        return Ok(Value::String(content.to_string()));
+    }
+    
+    // Boolean
+    if s == "true" {
+        return Ok(Value::Bool(true));
+    }
+    if s == "false" {
+        return Ok(Value::Bool(false));
+    }
+    
+    // Float (has decimal point)
+    if s.contains('.') {
+        return s.parse::<f32>()
+            .map(Value::Float)
+            .map_err(|_| DslError::Parse {
+                line: line_no,
+                msg: format!("Invalid float: {}", s),
+            });
+    }
+    
+    // Int
+    s.parse::<i32>()
+        .map(Value::Int)
+        .map_err(|_| DslError::Parse {
+            line: line_no,
+            msg: format!("Invalid value: {}", s),
+        })
+}

@@ -2,24 +2,17 @@
 
 use std::collections::HashMap;
 
-use crate::tensor::{Tensor, TensorId, Shape};
-use crate::store::{InMemoryTensorStore, StoreError};
+use crate::dataset::{Dataset, DatasetId};
+use crate::dataset_store::{DatasetStore, DatasetStoreError};
 use crate::ops::{
-    add,
-    sub,
-    multiply,
-    divide,
-    scalar_mul,
-    dot_1d,
-    cosine_similarity_1d,
-    distance_1d,
-    normalize_1d,
-    add_relaxed,
-    sub_relaxed,
-    multiply_relaxed,
-    divide_relaxed,
+    add, add_relaxed, cosine_similarity_1d, distance_1d, divide, divide_relaxed, dot_1d, flatten,
+    matmul, multiply, multiply_relaxed, normalize_1d, reshape, scalar_mul, sub, sub_relaxed,
+    transpose,
 };
-
+use crate::store::{InMemoryTensorStore, StoreError};
+use crate::tensor::{Shape, Tensor, TensorId};
+use crate::tuple::{Schema, Tuple};
+use std::sync::Arc;
 
 /// Operaciones binarias de alto nivel
 #[derive(Debug, Clone)]
@@ -47,6 +40,10 @@ pub enum UnaryOp {
     Scale(f32),
     /// NORMALIZE a
     Normalize,
+    /// TRANSPOSE a (matrix transpose)
+    Transpose,
+    /// FLATTEN a (flatten to 1D)
+    Flatten,
 }
 
 #[derive(Debug)]
@@ -54,11 +51,19 @@ pub enum EngineError {
     Store(StoreError),
     NameNotFound(String),
     InvalidOp(String),
+    DatasetError(DatasetStoreError),
+    DatasetNotFound(String),
 }
 
 impl From<StoreError> for EngineError {
     fn from(e: StoreError) -> Self {
         EngineError::Store(e)
+    }
+}
+
+impl From<DatasetStoreError> for EngineError {
+    fn from(e: DatasetStoreError) -> Self {
+        EngineError::DatasetError(e)
     }
 }
 
@@ -68,6 +73,8 @@ impl std::fmt::Display for EngineError {
             EngineError::Store(e) => write!(f, "Store error: {}", e),
             EngineError::NameNotFound(name) => write!(f, "Tensor name not found: {}", name),
             EngineError::InvalidOp(msg) => write!(f, "Invalid operation: {}", msg),
+            EngineError::DatasetError(e) => write!(f, "Dataset error: {}", e),
+            EngineError::DatasetNotFound(name) => write!(f, "Dataset not found: {}", name),
         }
     }
 }
@@ -91,6 +98,7 @@ struct NameEntry {
 pub struct TensorDb {
     store: InMemoryTensorStore,
     names: HashMap<String, NameEntry>,
+    dataset_store: DatasetStore,
 }
 
 impl TensorDb {
@@ -98,6 +106,7 @@ impl TensorDb {
         Self {
             store: InMemoryTensorStore::new(),
             names: HashMap::new(),
+            dataset_store: DatasetStore::new(),
         }
     }
 
@@ -120,13 +129,7 @@ impl TensorDb {
         kind: TensorKind,
     ) -> Result<(), EngineError> {
         let id = self.store.insert_tensor(shape, data)?;
-        self.names.insert(
-            name.into(),
-            NameEntry {
-                id,
-                kind,
-            },
-        );
+        self.names.insert(name.into(), NameEntry { id, kind });
         Ok(())
     }
 
@@ -161,10 +164,14 @@ impl TensorDb {
         let new_id = self.store.gen_id_internal();
 
         let result = match op {
-            UnaryOp::Scale(s) => scalar_mul(&in_tensor, s, new_id)
-                .map_err(EngineError::InvalidOp)?,
-            UnaryOp::Normalize => normalize_1d(&in_tensor, new_id)
-                .map_err(EngineError::InvalidOp)?,
+            UnaryOp::Scale(s) => {
+                scalar_mul(&in_tensor, s, new_id).map_err(EngineError::InvalidOp)?
+            }
+            UnaryOp::Normalize => {
+                normalize_1d(&in_tensor, new_id).map_err(EngineError::InvalidOp)?
+            }
+            UnaryOp::Transpose => transpose(&in_tensor, new_id).map_err(EngineError::InvalidOp)?,
+            UnaryOp::Flatten => flatten(&in_tensor, new_id).map_err(EngineError::InvalidOp)?,
         };
 
         let out_id = self.store.insert_existing_tensor(result)?;
@@ -179,7 +186,7 @@ impl TensorDb {
     }
 
     /// Evalúa operación binaria: ADD, SUBTRACT, CORRELATE, SIMILARITY
-        /// Evalúa operación binaria: ADD, SUBTRACT, CORRELATE, SIMILARITY, DISTANCE
+    /// Evalúa operación binaria: ADD, SUBTRACT, CORRELATE, SIMILARITY, DISTANCE
     pub fn eval_binary(
         &mut self,
         output_name: impl Into<String>,
@@ -200,59 +207,48 @@ impl TensorDb {
         };
 
         let result_tensor = match op {
-            BinaryOp::Add => {
-                match out_kind {
-                    TensorKind::Strict => add(&a, &b, new_id)
-                        .map_err(EngineError::InvalidOp)?,
-                    TensorKind::Normal => add_relaxed(&a, &b, new_id)
-                        .map_err(EngineError::InvalidOp)?,
+            BinaryOp::Add => match out_kind {
+                TensorKind::Strict => add(&a, &b, new_id).map_err(EngineError::InvalidOp)?,
+                TensorKind::Normal => {
+                    add_relaxed(&a, &b, new_id).map_err(EngineError::InvalidOp)?
                 }
-            }
-            BinaryOp::Subtract => {
-                match out_kind {
-                    TensorKind::Strict => sub(&a, &b, new_id)
-                        .map_err(EngineError::InvalidOp)?,
-                    TensorKind::Normal => sub_relaxed(&a, &b, new_id)
-                        .map_err(EngineError::InvalidOp)?,
+            },
+            BinaryOp::Subtract => match out_kind {
+                TensorKind::Strict => sub(&a, &b, new_id).map_err(EngineError::InvalidOp)?,
+                TensorKind::Normal => {
+                    sub_relaxed(&a, &b, new_id).map_err(EngineError::InvalidOp)?
                 }
-            }
-            BinaryOp::Multiply => {
-                match out_kind {
-                    TensorKind::Strict => multiply(&a, &b, new_id)
-                        .map_err(EngineError::InvalidOp)?,
-                    TensorKind::Normal => multiply_relaxed(&a, &b, new_id)
-                        .map_err(EngineError::InvalidOp)?,
+            },
+            BinaryOp::Multiply => match out_kind {
+                TensorKind::Strict => multiply(&a, &b, new_id).map_err(EngineError::InvalidOp)?,
+                TensorKind::Normal => {
+                    multiply_relaxed(&a, &b, new_id).map_err(EngineError::InvalidOp)?
                 }
-            }
-            BinaryOp::Divide => {
-                match out_kind {
-                    TensorKind::Strict => divide(&a, &b, new_id)
-                        .map_err(EngineError::InvalidOp)?,
-                    TensorKind::Normal => divide_relaxed(&a, &b, new_id)
-                        .map_err(EngineError::InvalidOp)?,
+            },
+            BinaryOp::Divide => match out_kind {
+                TensorKind::Strict => divide(&a, &b, new_id).map_err(EngineError::InvalidOp)?,
+                TensorKind::Normal => {
+                    divide_relaxed(&a, &b, new_id).map_err(EngineError::InvalidOp)?
                 }
-            }
+            },
             BinaryOp::Correlate => {
                 // CORRELATE = dot → escalar (sigue siendo estricto en shape)
                 let value = dot_1d(&a, &b).map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
-                Tensor::new(new_id, shape, data)
-                    .map_err(EngineError::InvalidOp)?
+                Tensor::new(new_id, shape, data).map_err(EngineError::InvalidOp)?
             }
             BinaryOp::Similarity => {
                 let value = cosine_similarity_1d(&a, &b).map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
-                Tensor::new(new_id, shape, data)
-                    .map_err(EngineError::InvalidOp)?
+                Tensor::new(new_id, shape, data).map_err(EngineError::InvalidOp)?
             }
             BinaryOp::Distance => {
                 let value = distance_1d(&a, &b).map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
-                Tensor::new(new_id, shape, data)
-                    .map_err(EngineError::InvalidOp)?
+                Tensor::new(new_id, shape, data).map_err(EngineError::InvalidOp)?
             }
         };
 
@@ -270,5 +266,102 @@ impl TensorDb {
     /// Para debug: todos los nombres registrados
     pub fn list_names(&self) -> Vec<String> {
         self.names.keys().cloned().collect()
+    }
+
+    /// Matrix multiplication: C = MATMUL A B
+    pub fn eval_matmul(
+        &mut self,
+        output_name: impl Into<String>,
+        left_name: &str,
+        right_name: &str,
+    ) -> Result<(), EngineError> {
+        let (a_ref, kind_a) = self.get_with_kind(left_name)?;
+        let (b_ref, kind_b) = self.get_with_kind(right_name)?;
+        let a = a_ref.clone();
+        let b = b_ref.clone();
+        let new_id = self.store.gen_id_internal();
+
+        let result = matmul(&a, &b, new_id).map_err(EngineError::InvalidOp)?;
+
+        let out_kind = match (kind_a, kind_b) {
+            (TensorKind::Strict, _) | (_, TensorKind::Strict) => TensorKind::Strict,
+            _ => TensorKind::Normal,
+        };
+
+        let out_id = self.store.insert_existing_tensor(result)?;
+        self.names.insert(
+            output_name.into(),
+            NameEntry {
+                id: out_id,
+                kind: out_kind,
+            },
+        );
+        Ok(())
+    }
+
+    /// Reshape tensor: B = RESHAPE A TO [new_shape]
+    pub fn eval_reshape(
+        &mut self,
+        output_name: impl Into<String>,
+        input_name: &str,
+        new_shape: Shape,
+    ) -> Result<(), EngineError> {
+        let (in_tensor_ref, in_kind) = self.get_with_kind(input_name)?;
+        let in_tensor = in_tensor_ref.clone();
+        let new_id = self.store.gen_id_internal();
+
+        let result = reshape(&in_tensor, new_shape, new_id).map_err(EngineError::InvalidOp)?;
+
+        let out_id = self.store.insert_existing_tensor(result)?;
+        self.names.insert(
+            output_name.into(),
+            NameEntry {
+                id: out_id,
+                kind: in_kind,
+            },
+        );
+        Ok(())
+    }
+
+    // ===== Dataset Management Methods =====
+
+    /// Create a new dataset with schema
+    pub fn create_dataset(
+        &mut self,
+        name: String,
+        schema: Arc<Schema>,
+    ) -> Result<DatasetId, EngineError> {
+        let id = self.dataset_store.gen_id();
+        let dataset = Dataset::new(id, schema, Some(name.clone()));
+        self.dataset_store
+            .insert(dataset, Some(name))
+            .map_err(EngineError::from)
+    }
+
+    /// Get dataset by name
+    pub fn get_dataset(&self, name: &str) -> Result<&Dataset, EngineError> {
+        self.dataset_store
+            .get_by_name(name)
+            .map_err(|_| EngineError::DatasetNotFound(name.to_string()))
+    }
+
+    /// Get mutable dataset by name
+    pub fn get_dataset_mut(&mut self, name: &str) -> Result<&mut Dataset, EngineError> {
+        self.dataset_store
+            .get_mut_by_name(name)
+            .map_err(|_| EngineError::DatasetNotFound(name.to_string()))
+    }
+
+    /// Insert row into dataset
+    pub fn insert_row(&mut self, dataset_name: &str, tuple: Tuple) -> Result<(), EngineError> {
+        let dataset = self.get_dataset_mut(dataset_name)?;
+        dataset
+            .add_row(tuple)
+            .map_err(|e| EngineError::InvalidOp(e))
+    }
+
+    /// List all dataset names
+    pub fn list_dataset_names(&self) -> Vec<String> {
+        self.dataset_store.list_names()
     }
 }

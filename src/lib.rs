@@ -1,29 +1,44 @@
 // src/lib.rs
 
-pub mod tensor;
+pub mod dataset;
+pub mod dataset_store;
+pub mod dsl;
+pub mod engine;
 pub mod ops;
 pub mod store;
-pub mod engine;
-pub mod dsl;
+pub mod tensor;
+pub mod tuple;
+pub mod value;
 
 // Re-exports para tener una API limpia desde fuera del crate
-pub use tensor::{Tensor, TensorId, Shape};
-pub use store::{InMemoryTensorStore, StoreError};
+pub use dataset::{ColumnStats, Dataset, DatasetId, DatasetMetadata};
+pub use dataset_store::{DatasetStore, DatasetStoreError};
+pub use dsl::{execute_line, execute_script, DslError};
+pub use engine::{BinaryOp, EngineError, TensorDb, TensorKind, UnaryOp};
 pub use ops::{
     add,
-    sub,
-    multiply,
-    divide,
-    scalar_mul,
-    dot_1d,
-    l2_norm_1d,
-    distance_1d,
-    cosine_similarity_1d,
-    normalize_1d,
     add_relaxed,
-    sub_relaxed,
-    multiply_relaxed,
+    cosine_similarity_1d,
+    distance_1d,
+    divide,
     divide_relaxed,
+    dot_1d,
+    flatten,
+    index,
+    l2_norm_1d,
+    // Matrix operations
+    matmul,
+    multiply,
+    multiply_relaxed,
+    normalize_1d,
+    reshape,
+    scalar_mul,
+    slice,
+    sub,
+    sub_relaxed,
+    transpose,
 };
-pub use engine::{TensorDb, BinaryOp, UnaryOp, EngineError, TensorKind};
-pub use dsl::{DslError, execute_script, execute_line};
+pub use store::{InMemoryTensorStore, StoreError};
+pub use tensor::{Shape, Tensor, TensorId};
+pub use tuple::{Field, Schema, Tuple};
+pub use value::{Value, ValueType};

@@ -1,6 +1,6 @@
 // src/dsl.rs
 
-use crate::engine::{TensorDb, EngineError, BinaryOp, UnaryOp, TensorKind};
+use crate::engine::{BinaryOp, EngineError, TensorDb, TensorKind, UnaryOp};
 use crate::tensor::Shape;
 
 /// Errores del lenguaje de alto nivel (DSL)
@@ -88,7 +88,10 @@ fn handle_define(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), Ds
 
     // Detectar STRICT o no
     let (kind, tail) = if rhs.starts_with("STRICT TENSOR ") {
-        (TensorKind::Strict, rhs.trim_start_matches("STRICT TENSOR ").trim())
+        (
+            TensorKind::Strict,
+            rhs.trim_start_matches("STRICT TENSOR ").trim(),
+        )
     } else if rhs.starts_with("TENSOR ") {
         (TensorKind::Normal, rhs.trim_start_matches("TENSOR ").trim())
     } else {
@@ -116,7 +119,10 @@ fn handle_define(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), Ds
     let values = parse_f32_list(values_str, line_no)?;
 
     db.insert_named_with_kind(name, shape, values, kind)
-        .map_err(|e| DslError::Engine { line: line_no, source: e })
+        .map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })
 }
 
 /// LET c = ADD a b
@@ -153,7 +159,7 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
         });
     }
 
-        match tokens[0] {
+    match tokens[0] {
         "ADD" => {
             if tokens.len() != 3 {
                 return Err(DslError::Parse {
@@ -164,7 +170,10 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
             let left = tokens[1];
             let right = tokens[2];
             db.eval_binary(output_name, left, right, BinaryOp::Add)
-                .map_err(|e| DslError::Engine { line: line_no, source: e })
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
         }
         "SUBTRACT" => {
             if tokens.len() != 3 {
@@ -176,7 +185,10 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
             let left = tokens[1];
             let right = tokens[2];
             db.eval_binary(output_name, left, right, BinaryOp::Subtract)
-                .map_err(|e| DslError::Engine { line: line_no, source: e })
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
         }
         "MULTIPLY" => {
             if tokens.len() != 3 {
@@ -188,7 +200,10 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
             let left = tokens[1];
             let right = tokens[2];
             db.eval_binary(output_name, left, right, BinaryOp::Multiply)
-                .map_err(|e| DslError::Engine { line: line_no, source: e })
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
         }
         "DIVIDE" => {
             if tokens.len() != 3 {
@@ -200,7 +215,10 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
             let left = tokens[1];
             let right = tokens[2];
             db.eval_binary(output_name, left, right, BinaryOp::Divide)
-                .map_err(|e| DslError::Engine { line: line_no, source: e })
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
         }
         "CORRELATE" => {
             // CORRELATE a WITH b
@@ -213,7 +231,10 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
             let left = tokens[1];
             let right = tokens[3];
             db.eval_binary(output_name, left, right, BinaryOp::Correlate)
-                .map_err(|e| DslError::Engine { line: line_no, source: e })
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
         }
         "SIMILARITY" => {
             // SIMILARITY a WITH b
@@ -226,7 +247,10 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
             let left = tokens[1];
             let right = tokens[3];
             db.eval_binary(output_name, left, right, BinaryOp::Similarity)
-                .map_err(|e| DslError::Engine { line: line_no, source: e })
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
         }
         "DISTANCE" => {
             // DISTANCE a TO b
@@ -239,7 +263,10 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
             let left = tokens[1];
             let right = tokens[3];
             db.eval_binary(output_name, left, right, BinaryOp::Distance)
-                .map_err(|e| DslError::Engine { line: line_no, source: e })
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
         }
         "SCALE" => {
             // SCALE a BY 0.5
@@ -255,7 +282,10 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
                 msg: format!("Invalid scale factor: {}", tokens[3]),
             })?;
             db.eval_unary(output_name, input_name, UnaryOp::Scale(factor))
-                .map_err(|e| DslError::Engine { line: line_no, source: e })
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
         }
         "NORMALIZE" => {
             // NORMALIZE a
@@ -267,7 +297,10 @@ fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslEr
             }
             let input_name = tokens[1];
             db.eval_unary(output_name, input_name, UnaryOp::Normalize)
-                .map_err(|e| DslError::Engine { line: line_no, source: e })
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
         }
         other => Err(DslError::Parse {
             line: line_no,
@@ -306,9 +339,10 @@ fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslE
                 msg: "Expected: SHOW <name> or SHOW ALL".into(),
             });
         }
-        let t = db
-            .get(name)
-            .map_err(|e| DslError::Engine { line: line_no, source: e })?;
+        let t = db.get(name).map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
         println!(
             "{}: shape {:?}, len {}, data = {:?}",
             name,

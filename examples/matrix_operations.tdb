@@ -1,0 +1,128 @@
+# VectorDB DSL - Matrix Operations Demo
+# This script demonstrates the new VECTOR and MATRIX syntax
+# and matrix operations (MATMUL, TRANSPOSE, RESHAPE, FLATTEN)
+
+# ========================================
+# 1. VECTOR SYNTAX
+# ========================================
+
+# Create vectors using the new shorthand syntax
+VECTOR v1 = [1, 2, 3]
+VECTOR v2 = [4, 5, 6]
+
+# Vector operations (existing functionality)
+LET v_sum = ADD v1 v2
+LET v_dot = CORRELATE v1 WITH v2
+LET v_sim = SIMILARITY v1 WITH v2
+
+SHOW v_sum
+SHOW v_dot
+SHOW v_sim
+
+# ========================================
+# 2. MATRIX SYNTAX
+# ========================================
+
+# Create matrices using the new shorthand syntax
+MATRIX A = [[1, 2, 3], [4, 5, 6]]
+MATRIX B = [[7, 8], [9, 10], [11, 12]]
+
+SHOW A
+SHOW B
+
+# ========================================
+# 3. MATRIX MULTIPLICATION
+# ========================================
+
+# Multiply two matrices: A (2x3) * B (3x2) = C (2x2)
+LET C = MATMUL A B
+SHOW C
+
+# Verify with identity matrix
+MATRIX I = [[1, 0], [0, 1]]
+LET C_times_I = MATMUL C I
+SHOW C_times_I
+
+# ========================================
+# 4. TRANSPOSE
+# ========================================
+
+# Transpose matrix A from 2x3 to 3x2
+LET A_T = TRANSPOSE A
+SHOW A_T
+
+# Compute A * A^T (should be 2x2)
+LET A_times_AT = MATMUL A A_T
+SHOW A_times_AT
+
+# ========================================
+# 5. FLATTEN
+# ========================================
+
+# Flatten a matrix to a 1D vector
+LET flat_A = FLATTEN A
+SHOW flat_A
+
+# ========================================
+# 6. RESHAPE
+# ========================================
+
+# Reshape the flattened vector back to a matrix
+LET A_reshaped = RESHAPE flat_A TO [2, 3]
+SHOW A_reshaped
+
+# Reshape to different dimensions (same number of elements)
+LET A_3x2 = RESHAPE flat_A TO [3, 2]
+SHOW A_3x2
+
+# ========================================
+# 7. CHAINED OPERATIONS
+# ========================================
+
+# Complex workflow: Create, multiply, transpose, flatten, reshape
+MATRIX X = [[1, 2], [3, 4]]
+MATRIX Y = [[5, 6], [7, 8]]
+
+LET Z = MATMUL X Y
+LET Z_T = TRANSPOSE Z
+LET Z_flat = FLATTEN Z_T
+LET Z_final = RESHAPE Z_flat TO [1, 4]
+
+SHOW Z_final
+
+# ========================================
+# 8. MIXING OLD AND NEW SYNTAX
+# ========================================
+
+# Old syntax still works
+DEFINE old_tensor AS TENSOR [2, 2] VALUES [1, 2, 3, 4]
+
+# Can use with new operations
+LET old_transposed = TRANSPOSE old_tensor
+SHOW old_transposed
+
+# ========================================
+# 9. VECTOR MATH WITH MATRIX OPERATIONS
+# ========================================
+
+# Create a vector and reshape it to a matrix
+VECTOR data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+LET matrix_3x4 = RESHAPE data TO [3, 4]
+LET matrix_4x3 = TRANSPOSE matrix_3x4
+LET back_to_vector = FLATTEN matrix_4x3
+
+SHOW back_to_vector
+
+# ========================================
+# SUMMARY
+# ========================================
+# New DSL Features:
+# - VECTOR syntax for quick vector creation
+# - MATRIX syntax for quick matrix creation
+# - MATMUL for matrix multiplication
+# - TRANSPOSE for matrix transposition
+# - FLATTEN for converting to 1D
+# - RESHAPE for changing tensor dimensions
+#
+# All operations work seamlessly with existing
+# tensor operations (ADD, CORRELATE, SIMILARITY, etc.)
