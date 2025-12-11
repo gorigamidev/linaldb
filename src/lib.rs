@@ -4,6 +4,7 @@ pub mod core;
 
 pub mod dsl;
 pub mod engine;
+pub mod server;
 pub mod utils;
 
 // Re-exports replacing legacy modules with core aliases

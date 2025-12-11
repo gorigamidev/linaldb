@@ -1,26 +1,27 @@
 // src/value.rs
 
+use serde::Serialize;
 use std::fmt;
 
 /// Represents a value in the database - supports heterogeneous types
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Value {
     Float(f32),
     Int(i64),
     String(String),
     Bool(bool),
-    Vector(Vec<f32>),  // Embedding vector
+    Vector(Vec<f32>), // Embedding vector
     Null,
 }
 
 /// Type descriptor for values
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub enum ValueType {
     Float,
     Int,
     String,
     Bool,
-    Vector(usize),  // Vector with fixed dimension
+    Vector(usize), // Vector with fixed dimension
     Null,
 }
 
@@ -87,7 +88,7 @@ impl Value {
     /// Compare values (for sorting and filtering)
     pub fn compare(&self, other: &Value) -> Option<std::cmp::Ordering> {
         use std::cmp::Ordering;
-        
+
         match (self, other) {
             (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
             (Value::Int(a), Value::Int(b)) => Some(a.cmp(b)),
@@ -151,9 +152,15 @@ mod tests {
     fn test_value_types() {
         assert_eq!(Value::Float(1.5).value_type(), ValueType::Float);
         assert_eq!(Value::Int(42).value_type(), ValueType::Int);
-        assert_eq!(Value::String("hello".to_string()).value_type(), ValueType::String);
+        assert_eq!(
+            Value::String("hello".to_string()).value_type(),
+            ValueType::String
+        );
         assert_eq!(Value::Bool(true).value_type(), ValueType::Bool);
-        assert_eq!(Value::Vector(vec![1.0, 2.0, 3.0]).value_type(), ValueType::Vector(3));
+        assert_eq!(
+            Value::Vector(vec![1.0, 2.0, 3.0]).value_type(),
+            ValueType::Vector(3)
+        );
         assert_eq!(Value::Null.value_type(), ValueType::Null);
     }
 
@@ -177,12 +184,21 @@ mod tests {
         use std::cmp::Ordering;
 
         assert_eq!(Value::Int(5).compare(&Value::Int(10)), Some(Ordering::Less));
-        assert_eq!(Value::Float(3.14).compare(&Value::Float(2.71)), Some(Ordering::Greater));
-        assert_eq!(Value::String("a".to_string()).compare(&Value::String("b".to_string())), Some(Ordering::Less));
-        
+        assert_eq!(
+            Value::Float(3.14).compare(&Value::Float(2.71)),
+            Some(Ordering::Greater)
+        );
+        assert_eq!(
+            Value::String("a".to_string()).compare(&Value::String("b".to_string())),
+            Some(Ordering::Less)
+        );
+
         // Cross-type numeric comparison
-        assert_eq!(Value::Int(5).compare(&Value::Float(5.0)), Some(Ordering::Equal));
-        
+        assert_eq!(
+            Value::Int(5).compare(&Value::Float(5.0)),
+            Some(Ordering::Equal)
+        );
+
         // Null handling
         assert_eq!(Value::Null.compare(&Value::Int(5)), Some(Ordering::Less));
         assert_eq!(Value::Int(5).compare(&Value::Null), Some(Ordering::Greater));
@@ -195,7 +211,7 @@ mod tests {
         assert_eq!(Value::String("hello".to_string()).to_string(), "\"hello\"");
         assert_eq!(Value::Bool(true).to_string(), "true");
         assert_eq!(Value::Null.to_string(), "NULL");
-        
+
         let vec_val = Value::Vector(vec![1.0, 2.0, 3.0]);
         assert_eq!(vec_val.to_string(), "[1, 2, 3]");
     }

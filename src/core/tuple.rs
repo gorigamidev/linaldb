@@ -1,11 +1,12 @@
 // src/tuple.rs
 
 use super::value::{Value, ValueType};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Field definition in a schema
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Field {
     pub name: String,
     pub value_type: ValueType,
@@ -47,7 +48,7 @@ impl Field {
 }
 
 /// Schema defines the structure of a tuple
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Schema {
     pub fields: Vec<Field>,
     field_indices: HashMap<String, usize>,
@@ -115,7 +116,7 @@ impl Schema {
 }
 
 /// Tuple represents a structured record with named fields
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Tuple {
     pub schema: Arc<Schema>,
     pub values: Vec<Value>,

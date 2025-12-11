@@ -4,8 +4,44 @@ pub mod handlers;
 
 pub use error::DslError;
 
+use crate::core::dataset::Dataset;
+use crate::core::tensor::Tensor;
 use crate::engine::TensorDb;
 use handlers::{handle_dataset, handle_define, handle_insert, handle_let, handle_show};
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+pub enum DslOutput {
+    None,
+    Message(String),
+    Table(Dataset),
+    Tensor(Tensor),
+}
+
+use std::fmt;
+
+impl fmt::Display for DslOutput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DslOutput::None => Ok(()),
+            DslOutput::Message(s) => write!(f, "{}", s),
+            DslOutput::Table(ds) => {
+                writeln!(
+                    f,
+                    "Dataset: {} (rows: {}, columns: {})",
+                    ds.metadata.name.as_deref().unwrap_or("?"),
+                    ds.len(),
+                    ds.schema.len()
+                )?;
+                for field in &ds.schema.fields {
+                    writeln!(f, "  - {}: {}", field.name, field.value_type)?;
+                }
+                Ok(())
+            }
+            DslOutput::Tensor(t) => write!(f, "Tensor: {:?} values: {:?}", t.shape, t.data), // simplified
+        }
+    }
+}
 
 /// Ejecuta un script completo (varias líneas) sobre un TensorDb
 pub fn execute_script(db: &mut TensorDb, script: &str) -> Result<(), DslError> {
@@ -21,9 +57,17 @@ pub fn execute_script(db: &mut TensorDb, script: &str) -> Result<(), DslError> {
             continue;
         }
 
-        if let Err(e) = execute_line(db, line, line_no) {
-            // Abort on error
-            return Err(e);
+        match execute_line(db, line, line_no) {
+            Ok(output) => {
+                // For script execution (CLI run), we effectively print the output if it's significant?
+                // Or we just ignore unless it's a Message/Show?
+                // Current behavior was: Handlers print.
+                // New behavior: Handlers return DslOutput. We must print it.
+                if !matches!(output, DslOutput::None) {
+                    println!("{}", output);
+                }
+            }
+            Err(e) => return Err(e),
         }
     }
 
@@ -31,7 +75,7 @@ pub fn execute_script(db: &mut TensorDb, script: &str) -> Result<(), DslError> {
 }
 
 /// Ejecuta una sola línea de DSL
-pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     if line.starts_with("DEFINE ") {
         handle_define(db, line, line_no)
     } else if line.starts_with("VECTOR ") {
@@ -49,7 +93,7 @@ pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(),
     } else {
         // Comment or empty? handled in script, but for single line exec check too
         if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
-            return Ok(());
+            return Ok(DslOutput::None);
         }
         Err(DslError::Parse {
             line: line_no,

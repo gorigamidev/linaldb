@@ -1,25 +1,18 @@
 # VectorDB
 
-VectorDB is an experimental, in-memory tensor database and DSL engine written in Rust. It supports high-performance tensor operations and structured dataset management with a SQL-like query language.
+**VectorDB** is an experimental, in-memory tensor database and DSL engine written in Rust. It combines high-performance tensor operations with structured dataset management and a SQL-like query language.
 
-## Features
+## 🚀 Features
 
-- **Tensor Operations**: 
-  - Create vectors and matrices.
-  - Perform arithmetic (`ADD`, `SUB`, `MUL`, `DIV`).
-  - Compute `SIMILARITY`, `DISTANCE`, `CORRELATE`.
-  - Linear algebra: `MATMUL`, `TRANSPOSE`, `RESHAPE`, `FLATTEN`.
-- **Structured Datasets**:
-  - Define schemas with types (`INT`, `FLOAT`, `STRING`, `BOOL`).
-  - Insert row data.
-- **Query Language**:
-  - `FROM ... FILTER ... SELECT ... ORDER BY ... LIMIT` syntax for datasets.
-- **Modular Architecture**:
-  - Clean separation between Core, Engine, and DSL layers.
+-   **Tensor Operations**: Vectors, Matrices, Arithmetic, Dot Product, Similarity, Distance.
+-   **Structured Datasets**: Define schemas, insert data, and query with `FILTER`, `SELECT`, `ORDER BY`.
+-   **Server Mode**: Built-in HTTP server returning **TOON (Token-Oriented Object Notation)** responses.
+-   **TOON Integration**: optimized output format for LLM consumption.
+-   **REPL & CLI**: Interactive shell and script execution.
 
-## Installation
+## 📦 Installation
 
-Ensure you have Rust installed. Clone the repository and build:
+Ensure you have Rust installed.
 
 ```bash
 git clone https://github.com/yourusername/vector-db-rs.git
@@ -27,85 +20,47 @@ cd vector-db-rs
 cargo build --release
 ```
 
-## Usage
+## 🛠 Usage
 
-You can run scripts using the DSL.
-
-### Running a script
-
-Create a `.tdb` file (e.g., `example.tdb`):
-
-```sql
-DEFINE v1 AS TENSOR [3] VALUES [1.0, 2.0, 3.0]
-DATASET users COLUMNS (name: STRING, age: INT)
-INSERT INTO users VALUES ("Alice", 30)
-SHOW ALL
-```
-
-Run it:
-
+### 1. Interactive REPL
+Run the database in interactive mode:
 ```bash
-cargo run example.tdb
+cargo run
 ```
 
-You can also run in interactive mode (REPL) by running `cargo run` without arguments.
-
-## DSL Reference
-
-### Tensors
-
-```sql
-DEFINE <name> AS TENSOR [<dims>] VALUES [<values>]
-VECTOR <name> = [<values>]
-MATRIX <name> = [[<row1>], [<row2>]]
-
-LET <name> = ADD <t1> <t2>
-LET <name> = MATMUL <m1> <m2>
-LET <name> = TRANSPOSE <m>
-LET <name> = SIMILARITY <t1> WITH <t2>
-SHOW <name>
-SHOW SHAPE <name>
+### 2. Execute a Script
+Run a `.vdb` script file:
+```bash
+cargo run -- run example.vdb
 ```
 
-### Datasets
-
-**Creation:**
-```sql
-DATASET <name> COLUMNS (<col>: <TYPE>, ...)
-```
-Types: `INT`, `FLOAT`, `STRING`, `BOOL`.
-
-**Insertion:**
-```sql
-INSERT INTO <name> VALUES (<val1>, <val2>, ...)
+### 3. Server Mode
+Start the HTTP server (default port 8080):
+```bash
+cargo run -- server --port 8080
 ```
 
-**Querying:**
-```sql
-DATASET <new_name> FROM <source> 
-    [FILTER <col> <op> <val>]
-    [SELECT <col1>, <col2>]
-    [ORDER BY <col> [DESC]]
-    [LIMIT <n>]
+Send commands via HTTP (responds in `text/toon`):
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{"command": "SHOW ALL"}' http://localhost:8080/execute
 ```
 
-## Architecture
+## 📘 Documentation
 
-The project is organized into four main modules:
+-   [DSL Reference](docs/DSL_REFERENCE.md) - Full guide to the Query Language.
+-   [TOON Format](TOON_FORMAT.md) - Specification of the response format.
+-   [New Features & Architecture](docs/NewFeatures.md) - detailed design docs.
 
-- **`core`**: Fundamental data types (Tensor, Dataset, Tuple, Value) and storage.
-- **`engine`**: Execution logic (TensorDb, Operations).
-- **`dsl`**: Parser and command handlers.
-- **`utils`**: Shared utilities.
+## 🏗 Architecture
 
-## Testing
+-   **`core`**: Base types (`Tensor`, `Dataset`, `Value`).
+-   **`engine`**: Database logic and operations.
+-   **`dsl`**: Parser and execution handlers.
+-   **`server`**: Axum-based HTTP server with TOON encoding.
 
-Run the full test suite:
+## 🧪 Testing
 
+Run the test suite:
 ```bash
 cargo test
 ```
-
-## License
-
-MIT

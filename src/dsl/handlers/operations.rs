@@ -1,13 +1,17 @@
-use crate::dsl::error::DslError;
+use crate::dsl::{DslError, DslOutput};
 use crate::engine::{BinaryOp, TensorDb, UnaryOp};
 
 /// LET c = ADD a b
 /// LET score = CORRELATE a WITH b
 /// LET sim = SIMILARITY a WITH b
 /// LET half = SCALE a BY 0.5
-pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     // Quitamos LET
     let rest = line.trim_start_matches("LET").trim();
+    // ... (rest of function body until return) ...
+    // Note: I can't replace the signature and return in one go easily if body is long.
+    // I will replace valid chunks.
+    // Start with signature.
 
     // output = ...
     let parts: Vec<&str> = rest.splitn(2, '=').collect();
@@ -276,4 +280,5 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), D
             msg: format!("Unknown LET operation: {}", other),
         }),
     }
+    .map(|_| DslOutput::Message(format!("Defined variable: {}", output_name)))
 }

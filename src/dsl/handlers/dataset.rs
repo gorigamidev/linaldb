@@ -1,14 +1,19 @@
 use crate::core::tuple::{Field, Schema, Tuple};
 use crate::core::value::{Value, ValueType};
-use crate::dsl::error::DslError;
 use crate::engine::TensorDb;
 use std::cmp::Ordering;
 use std::sync::Arc;
 
+use crate::dsl::{DslError, DslOutput};
+
 /// DATASET name COLUMNS (col1: TYPE1, col2: TYPE2, ...)
 /// or
 /// DATASET name FROM source ...
-pub fn handle_dataset(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+pub fn handle_dataset(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
     if line.contains(" COLUMNS ") {
         handle_dataset_creation(db, line, line_no)
     } else if line.contains(" FROM ") {
@@ -21,7 +26,11 @@ pub fn handle_dataset(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(
     }
 }
 
-fn handle_dataset_creation(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+fn handle_dataset_creation(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
     let rest = line.trim_start_matches("DATASET").trim();
 
     // Split into name and columns part
@@ -46,12 +55,15 @@ fn handle_dataset_creation(db: &mut TensorDb, line: &str, line_no: usize) -> Res
             source: e,
         })?;
 
-    println!("Created dataset: {}", name);
-    Ok(())
+    Ok(DslOutput::Message(format!("Created dataset: {}", name)))
 }
 
 /// DATASET target FROM source [FILTER col > val] [SELECT col1, col2] [ORDER BY col [DESC]] [LIMIT n]
-fn handle_dataset_query(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+fn handle_dataset_query(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
     let rest = line.trim_start_matches("DATASET").trim();
 
     // Split into target and FROM source...
@@ -223,7 +235,7 @@ fn handle_dataset_query(db: &mut TensorDb, line: &str, line_no: usize) -> Result
     // And metadata/stats?
     target_ds.metadata = working_ds.metadata; // If compatible? stats are updated.
 
-    Ok(())
+    Ok(DslOutput::None)
 }
 
 fn split_clause<'a>(s: &'a str, current_kw: &str, all_kws: &[&str]) -> (&'a str, &'a str) {
@@ -344,7 +356,7 @@ fn parse_value_type(type_str: &str, line_no: usize) -> Result<ValueType, DslErro
 }
 
 /// INSERT INTO dataset_name VALUES (val1, val2, ...)
-pub fn handle_insert(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+pub fn handle_insert(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     let rest = line.trim_start_matches("INSERT INTO").trim();
 
     // Split into dataset_name and values part
@@ -379,7 +391,7 @@ pub fn handle_insert(db: &mut TensorDb, line: &str, line_no: usize) -> Result<()
             source: e,
         })?;
 
-    Ok(())
+    Ok(DslOutput::None)
 }
 
 /// Parse tuple values from: (val1, val2, ...)

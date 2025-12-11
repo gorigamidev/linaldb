@@ -1,11 +1,11 @@
 use crate::core::tensor::Shape;
-use crate::dsl::error::DslError;
+use crate::dsl::{DslError, DslOutput};
 use crate::engine::{TensorDb, TensorKind};
 use crate::utils::parsing::{parse_f32_list, parse_usize_list};
 
 /// DEFINE a AS TENSOR [3] VALUES [1, 0, 0]
 /// DEFINE a AS STRICT TENSOR [3] VALUES [1, 0, 0]
-pub fn handle_define(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+pub fn handle_define(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     // Quitamos el prefijo DEFINE
     let rest = line.trim_start_matches("DEFINE").trim();
 
@@ -67,10 +67,11 @@ pub fn handle_define(db: &mut TensorDb, line: &str, line_no: usize) -> Result<()
             line: line_no,
             source: e,
         })
+        .map(|_| DslOutput::Message(format!("Defined tensor: {}", name)))
 }
 
 /// VECTOR v = [1, 2, 3]
-pub fn handle_vector(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+pub fn handle_vector(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     let rest = line.trim_start_matches("VECTOR").trim();
     let parts: Vec<&str> = rest.splitn(2, '=').collect();
     if parts.len() != 2 {
@@ -98,10 +99,11 @@ pub fn handle_vector(db: &mut TensorDb, line: &str, line_no: usize) -> Result<()
             line: line_no,
             source: e,
         })
+        .map(|_| DslOutput::Message(format!("Defined vector: {}", name)))
 }
 
 /// MATRIX m = [[1, 2], [3, 4]]
-pub fn handle_matrix(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+pub fn handle_matrix(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     let rest = line.trim_start_matches("MATRIX").trim();
     let parts: Vec<&str> = rest.splitn(2, '=').collect();
     if parts.len() != 2 {
@@ -129,6 +131,7 @@ pub fn handle_matrix(db: &mut TensorDb, line: &str, line_no: usize) -> Result<()
             line: line_no,
             source: e,
         })
+        .map(|_| DslOutput::Message(format!("Defined matrix: {}", name)))
 }
 
 fn parse_matrix_values(s: &str) -> Result<(usize, usize, Vec<f32>), String> {

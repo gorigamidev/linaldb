@@ -2,16 +2,17 @@
 
 use super::tuple::{Schema, Tuple};
 use super::value::{Value, ValueType};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 /// Unique identifier for datasets
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub struct DatasetId(pub u64);
 
 /// Statistics for a single column
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ColumnStats {
     pub value_type: ValueType,
     pub null_count: usize,
@@ -20,7 +21,7 @@ pub struct ColumnStats {
 }
 
 /// Metadata about a dataset
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DatasetMetadata {
     pub name: Option<String>,
     pub created_at: SystemTime,
@@ -87,7 +88,7 @@ impl DatasetMetadata {
 }
 
 /// Dataset represents a table-like collection of tuples
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Dataset {
     pub id: DatasetId,
     pub schema: Arc<Schema>,

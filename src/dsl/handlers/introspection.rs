@@ -1,57 +1,58 @@
-use crate::dsl::error::DslError;
+use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
 
 /// SHOW x
 /// SHOW ALL
 /// SHOW ALL DATASETS
-pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), DslError> {
+pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     let rest = line.trim_start_matches("SHOW").trim();
 
     if rest == "ALL" || rest == "ALL TENSORS" {
         let mut names = db.list_names();
         names.sort();
-        println!("--- ALL TENSORS ---");
+        let mut output = String::from("--- ALL TENSORS ---\n");
         for name in names {
             if let Ok(t) = db.get(&name) {
-                println!(
-                    "{}: shape {:?}, len {}, data = {:?}",
+                output.push_str(&format!(
+                    "{}: shape {:?}, len {}, data = {:?}\n",
                     name,
                     t.shape.dims,
                     t.data.len(),
                     t.data
-                );
+                ));
             }
         }
-        println!("-------------------");
-        Ok(())
+        output.push_str("-------------------");
+        Ok(DslOutput::Message(output))
     } else if rest == "ALL DATASETS" {
         let mut names = db.list_dataset_names();
         names.sort();
-        println!("--- ALL DATASETS ---");
+        let mut output = String::from("--- ALL DATASETS ---\n");
         for name in names {
             if let Ok(dataset) = db.get_dataset(&name) {
-                println!(
-                    "Dataset: {} (rows: {}, columns: {})",
+                output.push_str(&format!(
+                    "Dataset: {} (rows: {}, columns: {})\n",
                     name,
                     dataset.len(),
                     dataset.schema.len()
-                );
-                // Print schema details
+                ));
                 for field in &dataset.schema.fields {
-                    println!("  - {}: {}", field.name, field.value_type);
+                    output.push_str(&format!("  - {}: {}\n", field.name, field.value_type));
                 }
             }
         }
-        println!("--------------------");
-        Ok(())
+        output.push_str("--------------------");
+        Ok(DslOutput::Message(output))
     } else if rest.starts_with("SHAPE ") {
         let name = rest.trim_start_matches("SHAPE ").trim();
         let t = db.get(name).map_err(|e| DslError::Engine {
             line: line_no,
             source: e,
         })?;
-        println!("SHAPE {}: {:?}", name, t.shape.dims);
-        Ok(())
+        Ok(DslOutput::Message(format!(
+            "SHAPE {}: {:?}\n",
+            name, t.shape.dims
+        )))
     } else {
         let name = rest;
         if name.is_empty() {
@@ -62,35 +63,12 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<(), 
         }
         // Check if it's a tensor
         if let Ok(t) = db.get(name) {
-            println!(
-                "{}: shape {:?}, len {}, data = {:?}",
-                name,
-                t.shape.dims,
-                t.data.len(),
-                t.data
-            );
-            return Ok(());
+            return Ok(DslOutput::Tensor(t.clone()));
         }
 
         // Check if it's a dataset
         if let Ok(dataset) = db.get_dataset(name) {
-            println!(
-                "Dataset: {} (rows: {}, columns: {})",
-                name,
-                dataset.len(),
-                dataset.schema.len()
-            );
-            // Print schema details
-            for field in &dataset.schema.fields {
-                println!("  - {}: {}", field.name, field.value_type);
-            }
-            // Print rows (first 10?)
-            println!("  Data:");
-            for (i, row) in dataset.rows.iter().take(10).enumerate() {
-                // Formatting tuple is verbose, simple debug print
-                println!("    {}: {:?}", i, row.values);
-            }
-            return Ok(());
+            return Ok(DslOutput::Table(dataset.clone()));
         }
 
         return Err(DslError::Engine {
