@@ -479,4 +479,47 @@ impl TensorDb {
         );
         Ok(())
     }
+
+    /// Create a standard hash index on a dataset column
+    pub fn create_index(
+        &mut self,
+        dataset_name: &str,
+        column_name: &str,
+    ) -> Result<(), EngineError> {
+        let dataset = self.get_dataset_mut(dataset_name)?;
+        let index = Box::new(crate::core::index::hash::HashIndex::new());
+        dataset
+            .create_index(column_name.to_string(), index)
+            .map_err(|e| EngineError::InvalidOp(e))
+    }
+
+    /// Create a vector index on a dataset column
+    pub fn create_vector_index(
+        &mut self,
+        dataset_name: &str,
+        column_name: &str,
+    ) -> Result<(), EngineError> {
+        let dataset = self.get_dataset_mut(dataset_name)?;
+        let index = Box::new(crate::core::index::vector::VectorIndex::new());
+        dataset
+            .create_index(column_name.to_string(), index)
+            .map_err(|e| EngineError::InvalidOp(e))
+    }
+
+    /// Get all indices info
+    pub fn list_indices(&self) -> Vec<(String, String, String)> {
+        let mut result = Vec::new();
+        for name in self.dataset_store.list_names() {
+            if let Ok(ds) = self.get_dataset(&name) {
+                for (col, idx) in &ds.indices {
+                    let type_str = match idx.index_type() {
+                        crate::core::index::IndexType::Hash => "HASH",
+                        crate::core::index::IndexType::Vector => "VECTOR",
+                    };
+                    result.push((name.clone(), col.clone(), type_str.to_string()));
+                }
+            }
+        }
+        result
+    }
 }

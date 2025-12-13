@@ -43,6 +43,19 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
         }
         output.push_str("--------------------");
         Ok(DslOutput::Message(output))
+    } else if rest == "ALL INDEXES" || rest == "INDEXES" {
+        let indices = db.list_indices();
+        let mut output = String::from("--- ALL INDICES ---\n");
+        output.push_str(&format!(
+            "{:<20} {:<20} {:<10}\n",
+            "Dataset", "Column", "Type"
+        ));
+        output.push_str(&format!("{:-<52}\n", ""));
+        for (ds, col, type_str) in indices {
+            output.push_str(&format!("{:<20} {:<20} {:<10}\n", ds, col, type_str));
+        }
+        output.push_str("-------------------");
+        Ok(DslOutput::Message(output))
     } else if rest.starts_with("SHAPE ") {
         let name = rest.trim_start_matches("SHAPE ").trim();
         let t = db.get(name).map_err(|e| DslError::Engine {

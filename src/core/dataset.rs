@@ -87,6 +87,8 @@ impl DatasetMetadata {
     }
 }
 
+use crate::core::index::Index;
+
 /// Dataset represents a table-like collection of tuples
 #[derive(Debug, Clone, Serialize)]
 pub struct Dataset {
@@ -94,6 +96,8 @@ pub struct Dataset {
     pub schema: Arc<Schema>,
     pub rows: Vec<Tuple>,
     pub metadata: DatasetMetadata,
+    #[serde(skip)]
+    pub indices: HashMap<String, Box<dyn Index>>,
 }
 
 impl Dataset {
@@ -107,6 +111,7 @@ impl Dataset {
             schema,
             rows: Vec::new(),
             metadata,
+            indices: HashMap::new(),
         }
     }
 
@@ -132,13 +137,35 @@ impl Dataset {
             schema,
             rows,
             metadata,
+            indices: HashMap::new(),
         })
+    }
+
+    /// Retrieve specific rows by their IDs (indices in the rows vector)
+    /// Used for optimized query execution via indices
+    pub fn get_rows_by_ids(&self, row_ids: &[usize]) -> Vec<Tuple> {
+        let mut new_rows = Vec::with_capacity(row_ids.len());
+        for &id in row_ids {
+            if id < self.rows.len() {
+                new_rows.push(self.rows[id].clone());
+            }
+        }
+        new_rows
     }
 
     /// Add a row to the dataset
     pub fn add_row(&mut self, row: Tuple) -> Result<(), String> {
         if !Arc::ptr_eq(&row.schema, &self.schema) {
             return Err("Row schema does not match dataset schema".to_string());
+        }
+
+        let row_id = self.rows.len();
+
+        // Update indices
+        for (col_name, index) in &mut self.indices {
+            if let Some(value) = row.get(col_name) {
+                index.add(row_id, value)?;
+            }
         }
 
         self.rows.push(row);
@@ -168,6 +195,7 @@ impl Dataset {
             schema: self.schema.clone(),
             rows: filtered_rows,
             metadata: self.metadata.clone(),
+            indices: HashMap::new(), // Indices are not preserved on filter for now
         };
 
         new_dataset
@@ -209,6 +237,7 @@ impl Dataset {
             schema: new_schema.clone(),
             rows: new_rows,
             metadata: self.metadata.clone(),
+            indices: HashMap::new(),
         };
 
         new_dataset
@@ -226,6 +255,7 @@ impl Dataset {
             schema: self.schema.clone(),
             rows: taken_rows,
             metadata: self.metadata.clone(),
+            indices: HashMap::new(),
         };
 
         new_dataset
@@ -243,6 +273,7 @@ impl Dataset {
             schema: self.schema.clone(),
             rows: skipped_rows,
             metadata: self.metadata.clone(),
+            indices: HashMap::new(),
         };
 
         new_dataset
@@ -277,6 +308,7 @@ impl Dataset {
             schema: self.schema.clone(),
             rows: sorted_rows,
             metadata: self.metadata.clone(),
+            indices: HashMap::new(),
         })
     }
 
@@ -292,6 +324,7 @@ impl Dataset {
             schema: self.schema.clone(),
             rows: mapped_rows,
             metadata: self.metadata.clone(),
+            indices: HashMap::new(),
         };
 
         new_dataset
@@ -300,7 +333,6 @@ impl Dataset {
         new_dataset
     }
 
-    /// Get a column as a vector of values
     pub fn get_column(&self, column_name: &str) -> Result<Vec<super::value::Value>, String> {
         let col_idx = self
             .schema
@@ -313,6 +345,36 @@ impl Dataset {
         }
 
         Ok(column_values)
+    }
+
+    /// Add an index to a column
+    pub fn create_index(
+        &mut self,
+        column_name: String,
+        mut index: Box<dyn Index>,
+    ) -> Result<(), String> {
+        if !self.schema_has_field(&column_name) {
+            return Err(format!("Column '{}' not found in schema", column_name));
+        }
+
+        // Populate index with existing data
+        for (i, row) in self.rows.iter().enumerate() {
+            if let Some(val) = row.get(&column_name) {
+                index.add(i, val)?;
+            }
+        }
+
+        self.indices.insert(column_name, index);
+        Ok(())
+    }
+
+    /// Get index for a column
+    pub fn get_index(&self, column_name: &str) -> Option<&Box<dyn Index>> {
+        self.indices.get(column_name)
+    }
+
+    fn schema_has_field(&self, name: &str) -> bool {
+        self.schema.fields.iter().any(|f| f.name == *name)
     }
 
     /// Add a new column to the dataset with a default value

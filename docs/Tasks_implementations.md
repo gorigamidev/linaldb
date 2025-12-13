@@ -101,18 +101,18 @@ This section refines and extends the roadmap starting from Phase 5.5, with the e
 
 > Goal: Enable fast lookups and similarity search as first-class concepts.
 
-- [ ] Define `Index` trait
-- [ ] Implement `HashIndex`
+- [x] Define `Index` trait
+- [x] Implement `HashIndex`
   - Exact match lookups
   - Equality-based filters
-- [ ] Implement `VectorIndex`
+- [x] Implement `VectorIndex`
   - Cosine similarity
   - Euclidean distance
-- [ ] Add CREATE INDEX DSL command
+- [x] Add CREATE INDEX DSL command
   - `CREATE INDEX idx_name ON dataset(column)`
   - `CREATE VECTOR INDEX idx_name ON dataset(embedding)`
-- [ ] Update INSERT to maintain indices
-- [ ] Add SHOW INDEXES command
+- [x] Update INSERT to maintain indices
+- [x] Add SHOW INDEXES command
 
 ---
 

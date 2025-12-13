@@ -304,12 +304,14 @@ fn evaluate_condition(val: &Value, op: &str, target: &Value) -> bool {
 
 /// Parse column definitions from: (col1: TYPE1, col2: TYPE2, ...)
 fn parse_column_definitions(columns_str: &str, line_no: usize) -> Result<Vec<Field>, DslError> {
-    // Remove parentheses
-    let inner = columns_str
-        .trim()
-        .trim_start_matches('(')
-        .trim_end_matches(')')
-        .trim();
+    // Remove only outer parentheses
+    let columns_str = columns_str.trim();
+    let inner = if columns_str.starts_with('(') && columns_str.ends_with(')') {
+        &columns_str[1..columns_str.len() - 1]
+    } else {
+        columns_str
+    };
+    let inner = inner.trim();
 
     if inner.is_empty() {
         return Err(DslError::Parse {
@@ -345,15 +347,40 @@ fn parse_column_definitions(columns_str: &str, line_no: usize) -> Result<Vec<Fie
 
 /// Parse a value type from string
 fn parse_value_type(type_str: &str, line_no: usize) -> Result<ValueType, DslError> {
-    match type_str.to_uppercase().as_str() {
-        "INT" => Ok(ValueType::Int),
-        "FLOAT" => Ok(ValueType::Float),
-        "STRING" => Ok(ValueType::String),
-        "BOOL" => Ok(ValueType::Bool),
-        _ => Err(DslError::Parse {
+    let upper = type_str.to_uppercase();
+    if upper == "INT" {
+        Ok(ValueType::Int)
+    } else if upper == "FLOAT" {
+        Ok(ValueType::Float)
+    } else if upper == "STRING" {
+        Ok(ValueType::String)
+    } else if upper == "BOOL" {
+        Ok(ValueType::Bool)
+    } else if upper.starts_with("VECTOR") {
+        // Expected format: VECTOR(N)
+        let start = upper.find('(');
+        let end = upper.find(')');
+        if let (Some(s), Some(e)) = (start, end) {
+            let dim_str = &upper[s + 1..e];
+            let dim: usize = dim_str.parse().map_err(|_| DslError::Parse {
+                line: line_no,
+                msg: format!("Invalid dimension in Vector definition: {}", dim_str),
+            })?;
+            Ok(ValueType::Vector(dim))
+        } else {
+            Err(DslError::Parse {
+                line: line_no,
+                msg: format!(
+                    "Invalid Vector definition: {}. Expected VECTOR(N)",
+                    type_str
+                ),
+            })
+        }
+    } else {
+        Err(DslError::Parse {
             line: line_no,
             msg: format!("Unknown type: {}", type_str),
-        }),
+        })
     }
 }
 
@@ -464,7 +491,7 @@ fn parse_tuple_values(
 
 /// Parse a single value
 /// Re-used from existing implementation
-fn parse_single_value(s: &str, line_no: usize) -> Result<Value, DslError> {
+pub fn parse_single_value(s: &str, line_no: usize) -> Result<Value, DslError> {
     let s = s.trim();
 
     // String (quoted)
@@ -482,7 +509,7 @@ fn parse_single_value(s: &str, line_no: usize) -> Result<Value, DslError> {
     }
 
     // Float (has decimal point)
-    if s.contains('.') {
+    if s.contains('.') && !s.starts_with('[') {
         return s
             .parse::<f32>()
             .map(Value::Float)
@@ -490,6 +517,24 @@ fn parse_single_value(s: &str, line_no: usize) -> Result<Value, DslError> {
                 line: line_no,
                 msg: format!("Invalid float: {}", s),
             });
+    }
+
+    // Vector [val1, val2, ...]
+    if s.starts_with('[') && s.ends_with(']') {
+        let content = &s[1..s.len() - 1];
+        let parts: Vec<&str> = content.split(',').map(|s| s.trim()).collect();
+        let mut floats = Vec::with_capacity(parts.len());
+        for p in parts {
+            if p.is_empty() {
+                continue;
+            }
+            let f = p.parse::<f32>().map_err(|_| DslError::Parse {
+                line: line_no,
+                msg: format!("Invalid vector element: {}", p),
+            })?;
+            floats.push(f);
+        }
+        return Ok(Value::Vector(floats));
     }
 
     // Int

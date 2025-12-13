@@ -1,4 +1,5 @@
 pub mod dataset;
+pub mod index;
 pub mod store;
 pub mod tensor;
 pub mod tuple;
