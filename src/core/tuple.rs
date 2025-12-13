@@ -41,6 +41,7 @@ impl Field {
             (ValueType::Vector(expected_dim), ValueType::Vector(actual_dim)) => {
                 expected_dim == &actual_dim
             }
+            (ValueType::Matrix(er, ec), ValueType::Matrix(ar, ac)) => er == &ar && ec == &ac,
             (ValueType::Null, ValueType::Null) => self.nullable,
             _ => false,
         }

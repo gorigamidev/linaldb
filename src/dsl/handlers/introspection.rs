@@ -43,18 +43,46 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
         }
         output.push_str("--------------------");
         Ok(DslOutput::Message(output))
-    } else if rest == "ALL INDEXES" || rest == "INDEXES" {
+    } else if rest.starts_with("INDEXES") {
+        let dataset_filter = if rest == "INDEXES" || rest == "ALL INDEXES" {
+            None
+        } else {
+             Some(rest.trim_start_matches("INDEXES ").trim())
+        };
+
         let indices = db.list_indices();
-        let mut output = String::from("--- ALL INDICES ---\n");
+        let mut output = if let Some(ds_name) = dataset_filter {
+            format!("--- INDICES FOR {} ---\n", ds_name)
+        } else {
+            String::from("--- ALL INDICES ---\n")
+        };
+        
         output.push_str(&format!(
             "{:<20} {:<20} {:<10}\n",
             "Dataset", "Column", "Type"
         ));
         output.push_str(&format!("{:-<52}\n", ""));
+        
+        let mut count = 0;
         for (ds, col, type_str) in indices {
+            if let Some(target) = dataset_filter {
+                if ds != target { continue; }
+            }
             output.push_str(&format!("{:<20} {:<20} {:<10}\n", ds, col, type_str));
+            count += 1;
         }
         output.push_str("-------------------");
+        
+        if count == 0 && dataset_filter.is_some() {
+             // Check if dataset exists to give better error message?
+             if db.get_dataset(dataset_filter.unwrap()).is_err() {
+                 return Err(DslError::Engine {
+                     line: line_no,
+                     source: crate::engine::EngineError::NameNotFound(dataset_filter.unwrap().to_string())
+                 });
+             }
+        }
+        
         Ok(DslOutput::Message(output))
     } else if rest.starts_with("SHAPE ") {
         let name = rest.trim_start_matches("SHAPE ").trim();
@@ -99,6 +127,13 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
                 msg: "Expected: SHOW <name> or SHOW ALL or SHOW ALL DATASETS".into(),
             });
         }
+
+        // Check for string literal
+        if name.starts_with('"') && name.ends_with('"') && name.len() >= 2 {
+            let content = &name[1..name.len() - 1];
+            return Ok(DslOutput::Message(content.to_string()));
+        }
+
         // Check if it's a tensor
         if let Ok(t) = db.get(name) {
             return Ok(DslOutput::Tensor(t.clone()));

@@ -27,6 +27,7 @@ impl HashIndex {
             Value::String(s) => s.clone(),
             Value::Bool(b) => b.to_string(),
             Value::Vector(v) => format!("{:?}", v),
+            Value::Matrix(m) => format!("{:?}", m),
             Value::Null => "NULL".to_string(),
         }
     }

@@ -2,8 +2,8 @@ use crate::core::tuple::Schema;
 use crate::engine::{EngineError, TensorDb};
 use crate::query::logical::{Expr, LogicalPlan};
 use crate::query::physical::{
-    FilterExec, IndexScanExec, LimitExec, PhysicalPlan, ProjectionExec, SeqScanExec, SortExec,
-    VectorSearchExec,
+    AggregateExec, FilterExec, IndexScanExec, LimitExec, PhysicalPlan, ProjectionExec, SeqScanExec,
+    SortExec, VectorSearchExec,
 };
 use std::sync::Arc;
 
@@ -141,6 +141,20 @@ impl<'a> Planner<'a> {
                     input: input_plan,
                     column: column.clone(),
                     ascending: *ascending,
+                }))
+            }
+            LogicalPlan::Aggregate {
+                input,
+                group_expr,
+                aggr_expr,
+            } => {
+                let input_plan = self.create_physical_plan(input)?;
+                let schema = logical_plan.schema(); // Get helper schema
+                Ok(Box::new(AggregateExec {
+                    input: input_plan,
+                    group_expr: group_expr.clone(),
+                    aggr_expr: aggr_expr.clone(),
+                    schema,
                 }))
             }
         }

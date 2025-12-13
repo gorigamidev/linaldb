@@ -45,30 +45,57 @@ impl fmt::Display for DslOutput {
 
 /// Ejecuta un script completo (varias líneas) sobre un TensorDb
 pub fn execute_script(db: &mut TensorDb, script: &str) -> Result<(), DslError> {
+    let mut current_cmd = String::new();
+    let mut start_line = 0;
+    let mut paren_balance = 0;
+
     for (idx, raw_line) in script.lines().enumerate() {
-        let line_no = idx + 1;
         let line = raw_line.trim();
 
-        // Ignorar vacío y comentarios
-        if line.is_empty() {
-            continue;
-        }
-        if line.starts_with('#') || line.starts_with("//") {
-            continue;
+        // Ignorar vacío y comentarios IF we are not inside a command
+        if current_cmd.is_empty() {
+            if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+                continue;
+            }
+            start_line = idx + 1;
         }
 
-        match execute_line(db, line, line_no) {
-            Ok(output) => {
-                // For script execution (CLI run), we effectively print the output if it's significant?
-                // Or we just ignore unless it's a Message/Show?
-                // Current behavior was: Handlers print.
-                // New behavior: Handlers return DslOutput. We must print it.
-                if !matches!(output, DslOutput::None) {
-                    println!("{}", output);
-                }
-            }
-            Err(e) => return Err(e),
+        if !current_cmd.is_empty() {
+            current_cmd.push(' ');
         }
+        current_cmd.push_str(line);
+
+        // Update balance
+        for c in line.chars() {
+            if c == '(' {
+                paren_balance += 1;
+            } else if c == ')' {
+                paren_balance -= 1;
+            }
+        }
+
+        // Check if command is complete
+        // Heuristic: balance is 0.
+        // Note: This might be fragile if strings contain parens, but MVP.
+        if paren_balance == 0 {
+            match execute_line(db, &current_cmd, start_line) {
+                Ok(output) => {
+                    if !matches!(output, DslOutput::None) {
+                        println!("{}", output);
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+            current_cmd.clear();
+        }
+    }
+
+    // Check if there is leftover
+    if !current_cmd.is_empty() {
+        return Err(DslError::Parse {
+            line: start_line,
+            msg: "Unexpected end of script (unbalanced parentheses?)".into(),
+        });
     }
 
     Ok(())
@@ -86,6 +113,8 @@ pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Dsl
         handle_let(db, line, line_no)
     } else if line.starts_with("SHOW ") {
         handle_show(db, line, line_no)
+    } else if line.starts_with("SELECT ") {
+        handlers::dataset::handle_select(db, line, line_no)
     } else if line.starts_with("DATASET ") {
         handlers::dataset::handle_dataset(db, line, line_no)
     } else if line.starts_with("INSERT INTO ") {

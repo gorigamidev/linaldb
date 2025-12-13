@@ -134,18 +134,18 @@ This section refines and extends the roadmap starting from Phase 5.5, with the e
 
 > Goal: Enable analytical workloads comparable to SQL engines.
 
-- [ ] Implement GROUP BY execution
-- [ ] Aggregation functions:
+- [x] Implement GROUP BY execution
+- [x] Aggregation functions:
   - SUM
   - AVG
   - COUNT
   - MIN / MAX
-- [ ] Aggregations over:
+- [X] Aggregations over:
   - Scalars
   - Vectors (element-wise)
   - Matrices (axis-based)
-- [ ] Support HAVING clause
-- [ ] Allow aggregations over computed columns
+- [x] Support HAVING clause
+- [X] Allow aggregations over computed columns
 
 ---
 

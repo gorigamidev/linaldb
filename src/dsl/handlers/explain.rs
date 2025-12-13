@@ -1,5 +1,4 @@
 use super::dataset::build_dataset_query_plan;
-use super::search::build_search_plan;
 use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
 use crate::query::planner::Planner;
@@ -32,89 +31,15 @@ pub fn handle_explain(
         // Let's create a helper `parse_search_line` in `search.rs`?
         // Or just implement parsing here (duplication).
         // Let's implement parsing here for now, it's not too long.
-
-        // Parse: SEARCH <target> FROM <source> ...
-        let rest = query_line.trim_start_matches("SEARCH").trim();
-        let parts: Vec<&str> = rest.splitn(2, " FROM ").collect();
-        if parts.len() != 2 {
-            return Err(DslError::Parse {
-                line: line_no,
-                msg: "Expected: SEARCH <target> FROM <source> ...".into(),
-            });
-        }
-        let parts2: Vec<&str> = parts[1].trim().splitn(2, " QUERY ").collect();
-        if parts2.len() != 2 {
-            return Err(DslError::Parse {
-                line: line_no,
-                msg: "Expected: ... FROM <source> QUERY ...".into(),
-            });
-        }
-        let source_name = parts2[0].trim();
-        let after_query = parts2[1].trim();
-
-        let parts3: Vec<&str> = after_query.splitn(2, " ON ").collect();
-        if parts3.len() != 2 {
-            return Err(DslError::Parse {
-                line: line_no,
-                msg: "Expected: ... QUERY <vector> ON <column> ...".into(),
-            });
-        }
-        let vector_str = parts3[0].trim();
-        let after_on = parts3[1].trim();
-
-        let parts4: Vec<&str> = if after_on.contains(" K=") {
-            after_on.splitn(2, " K=").collect()
-        } else if after_on.contains(" K =") {
-            after_on.splitn(2, " K =").collect()
-        } else {
-            return Err(DslError::Parse {
-                line: line_no,
-                msg: "Expected: ... ON <column> K=<k>".into(),
-            });
-        };
-        let column_name = parts4[0].trim();
-        let k_str = parts4[1].trim();
-        let k: usize = k_str.parse().map_err(|_| DslError::Parse {
-            line: line_no,
-            msg: format!("Invalid K: {}", k_str),
-        })?;
-
-        use crate::core::value::Value;
-        let query_val = super::dataset::parse_single_value(vector_str, line_no)?;
-        let query_tensor = match query_val {
-            Value::Vector(data) => {
-                use crate::core::tensor::{Shape, Tensor, TensorId};
-                Tensor::new(TensorId(0), Shape::new(vec![data.len()]), data).map_err(|e| {
-                    DslError::Parse {
-                        line: line_no,
-                        msg: e,
-                    }
-                })?
-            }
-            _ => {
-                return Err(DslError::Parse {
-                    line: line_no,
-                    msg: "Query must be vector".into(),
-                })
-            }
-        };
-
-        let source_ds = db.get_dataset(source_name).map_err(|e| DslError::Engine {
-            line: line_no,
-            source: e,
-        })?;
-
-        build_search_plan(
-            source_name,
-            source_ds.schema.clone(),
-            column_name,
-            query_tensor,
-            k,
-        )
+        // } else if query_line.starts_with("SEARCH ") {
+        let (_, plan) = super::search::build_search_query_plan(db, query_line, line_no)?;
+        plan
+    } else if query_line.starts_with("SELECT ") {
+        super::dataset::build_select_query_plan(db, query_line, line_no)?
     } else {
         return Err(DslError::Parse {
             line: line_no,
-            msg: "EXPLAIN only supports DATASET or SEARCH queries".into(),
+            msg: "EXPLAIN only supports DATASET, SEARCH or SELECT queries".into(),
         });
     };
 

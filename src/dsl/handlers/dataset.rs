@@ -109,6 +109,215 @@ fn handle_dataset_query(
     Ok(DslOutput::None)
 }
 
+/// SELECT ... FROM ...
+pub fn handle_select(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    let working_plan = build_select_query_plan(db, line, line_no)?;
+
+    // Execution
+    let planner = Planner::new(db);
+    let physical_plan =
+        planner
+            .create_physical_plan(&working_plan)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
+    let result_rows = physical_plan.execute(db).map_err(|e| DslError::Engine {
+        line: line_no,
+        source: e,
+    })?;
+
+    // Construct Dataset for Output
+    let result_schema = physical_plan.schema();
+    let ds = crate::core::dataset::Dataset {
+        id: crate::core::dataset::DatasetId(0),
+        schema: result_schema,
+        rows: result_rows.clone(),
+        metadata: crate::core::dataset::DatasetMetadata {
+            name: Some("Query Result".into()),
+            created_at: std::time::SystemTime::now(),
+            row_count: result_rows.len(),
+            column_stats: std::collections::HashMap::new(),
+        },
+        indices: std::collections::HashMap::new(),
+    };
+
+    Ok(DslOutput::Table(ds))
+}
+
+pub fn build_select_query_plan(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<LogicalPlan, DslError> {
+    // Parse: SELECT col1, col2, ... FROM source [FILTER ...] [GROUP BY ...]
+
+    // Find FROM
+    let from_idx = line.find(" FROM ").ok_or_else(|| DslError::Parse {
+        line: line_no,
+        msg: "Expected SELECT ... FROM source ...".into(),
+    })?;
+
+    // cols part: "SELECT col1, ..."
+    let cols_part = line[..from_idx].trim();
+    // rest part: "source [FILTER ...]"
+    let rest_part = line[from_idx + 6..].trim(); // skip " FROM "
+
+    // Extract source name (first word of rest_part)
+    let parts: Vec<&str> = rest_part.splitn(2, ' ').collect();
+    let source_name = parts[0];
+    let clauses_str = if parts.len() > 1 { parts[1] } else { "" };
+
+    // Build Plan
+    let source_ds = db.get_dataset(source_name).map_err(|e| DslError::Engine {
+        line: line_no,
+        source: e,
+    })?;
+    let source_schema = source_ds.schema.clone();
+
+    let mut working_plan = LogicalPlan::Scan {
+        dataset_name: source_name.to_string(),
+        schema: source_schema.clone(),
+    };
+
+    let mut pending_group_by: Option<Vec<Expr>> = None;
+    let mut remaining_clauses = clauses_str.to_string();
+    let keywords = ["FILTER", "WHERE", "ORDER BY", "LIMIT", "GROUP BY", "HAVING"];
+
+    // We process clauses from `clauses_str`
+    while !remaining_clauses.is_empty() {
+        let clauses_trimmed = remaining_clauses.trim();
+        if clauses_trimmed.is_empty() {
+            break;
+        }
+
+        if clauses_trimmed.starts_with("FILTER ") || clauses_trimmed.starts_with("WHERE ") {
+            let kw = if clauses_trimmed.starts_with("WHERE ") {
+                "WHERE"
+            } else {
+                "FILTER"
+            };
+            let (cond_str, rem) = split_clause(clauses_trimmed, kw, &keywords);
+            let cond_string = cond_str.to_string();
+            remaining_clauses = rem.to_string();
+            let (col, op, val) = parse_filter_condition(&cond_string, line_no)?;
+            working_plan = LogicalPlan::Filter {
+                input: Box::new(working_plan),
+                predicate: Expr::BinaryExpr {
+                    left: Box::new(Expr::Column(col)),
+                    op,
+                    right: Box::new(Expr::Literal(val)),
+                },
+            };
+        } else if clauses_trimmed.starts_with("GROUP BY ") {
+            let (group_str, rem) = split_clause(clauses_trimmed, "GROUP BY", &keywords);
+            let group_string = group_str.to_string();
+            remaining_clauses = rem.to_string();
+            let cols: Vec<String> = group_string
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            let exprs: Vec<Expr> = cols.into_iter().map(Expr::Column).collect();
+            pending_group_by = Some(exprs);
+        } else if clauses_trimmed.starts_with("HAVING ") {
+            let (cond_str, rem) = split_clause(clauses_trimmed, "HAVING", &keywords);
+            let cond_string = cond_str.to_string();
+            remaining_clauses = rem.to_string();
+            let (col, op, val) = parse_filter_condition(&cond_string, line_no)?;
+
+            working_plan = LogicalPlan::Filter {
+                input: Box::new(working_plan),
+                predicate: Expr::BinaryExpr {
+                    left: Box::new(Expr::Column(col)),
+                    op,
+                    right: Box::new(Expr::Literal(val)),
+                },
+            };
+        } else if clauses_trimmed.starts_with("limit ") || clauses_trimmed.starts_with("LIMIT ") {
+            let (limit_str, rem) = split_clause(clauses_trimmed, "LIMIT", &keywords);
+            let limit_string = limit_str.to_string();
+            remaining_clauses = rem.to_string();
+            let n: usize = limit_string.parse().map_err(|_| DslError::Parse {
+                line: line_no,
+                msg: "Invalid limit".into(),
+            })?;
+            working_plan = LogicalPlan::Limit {
+                input: Box::new(working_plan),
+                n,
+            };
+        } else {
+            if clauses_trimmed.starts_with("ORDER BY ") {
+                let (order_str, rem) = split_clause(clauses_trimmed, "ORDER BY", &keywords);
+                let order_string = order_str.to_string();
+                remaining_clauses = rem.to_string();
+                let parts: Vec<&str> = order_string.split_whitespace().collect();
+                let col = parts[0].to_string();
+                let desc = parts.len() > 1 && parts[1].eq_ignore_ascii_case("DESC");
+                working_plan = LogicalPlan::Sort {
+                    input: Box::new(working_plan),
+                    column: col,
+                    ascending: !desc,
+                };
+            } else {
+                return Err(DslError::Parse {
+                    line: line_no,
+                    msg: format!("Unknown clause in SELECT: {}", clauses_trimmed),
+                });
+            }
+        }
+    }
+
+    // Finally apply Projection/Aggregation from the initial SELECT `cols_part`
+    let select_exprs_str = cols_part.trim_start_matches("SELECT ").trim();
+    let exprs = parse_select_items(select_exprs_str, line_no)?;
+
+    // Check for Aggregates
+    let has_aggr = exprs
+        .iter()
+        .any(|e| matches!(e, Expr::AggregateExpr { .. }));
+
+    if pending_group_by.is_some() || has_aggr {
+        let group_expr = pending_group_by.unwrap_or_default();
+        let actual_aggs: Vec<Expr> = exprs
+            .into_iter()
+            .filter(|e| matches!(e, Expr::AggregateExpr { .. }))
+            .collect();
+
+        working_plan = LogicalPlan::Aggregate {
+            input: Box::new(working_plan),
+            group_expr,
+            aggr_expr: actual_aggs,
+        };
+    } else {
+        // Simple Projection with Wildcard Expansion support
+        let mut cols = Vec::new();
+        for e in &exprs {
+            if let Expr::Column(c) = e {
+                if c == "*" {
+                    // Expand wildcard
+                    for field in &source_schema.fields {
+                        cols.push(field.name.clone());
+                    }
+                } else {
+                    cols.push(c.clone());
+                }
+            } else {
+                return Err(DslError::Parse {
+                    line: line_no,
+                    msg: "Only columns or Aggregates supported".into(),
+                });
+            }
+        }
+
+        working_plan = LogicalPlan::Project {
+            input: Box::new(working_plan),
+            columns: cols,
+        };
+    }
+
+    Ok(working_plan)
+}
+
 pub fn build_dataset_query_plan(
     db: &mut TensorDb,
     line: &str,
@@ -128,7 +337,9 @@ pub fn build_dataset_query_plan(
     let target_name = parts[0].trim().to_string();
     let query_part = parts[1].trim();
 
-    let keywords = ["FILTER", "SELECT", "ORDER BY", "LIMIT"];
+    let keywords = [
+        "FILTER", "SELECT", "ORDER BY", "LIMIT", "GROUP BY", "HAVING",
+    ];
     let mut first_keyword_idx = None;
 
     for &kw in &keywords {
@@ -163,6 +374,7 @@ pub fn build_dataset_query_plan(
     };
 
     // Process clauses
+    let mut pending_group_by: Option<Vec<Expr>> = None;
     while !clauses_str.is_empty() {
         let clauses_trimmed = clauses_str.trim();
 
@@ -181,14 +393,89 @@ pub fn build_dataset_query_plan(
                     right: Box::new(Expr::Literal(val)),
                 },
             };
+        } else if clauses_trimmed.starts_with("GROUP BY ") {
+            let (group_str, remaining) = split_clause(clauses_trimmed, "GROUP BY", &keywords);
+            clauses_str = remaining;
+
+            let cols: Vec<String> = group_str.split(',').map(|s| s.trim().to_string()).collect();
+            let exprs: Vec<Expr> = cols.into_iter().map(Expr::Column).collect();
+            pending_group_by = Some(exprs);
         } else if clauses_trimmed.starts_with("SELECT ") {
             let (cols_str, remaining) = split_clause(clauses_trimmed, "SELECT", &keywords);
             clauses_str = remaining;
 
-            let cols: Vec<String> = cols_str.split(',').map(|s| s.trim().to_string()).collect();
-            current_plan = LogicalPlan::Project {
+            // New parse function for expressions
+            let exprs = parse_select_items(cols_str, line_no)?;
+
+            // Check if we need Aggregate or Project
+            let has_aggr = exprs
+                .iter()
+                .any(|e| matches!(e, Expr::AggregateExpr { .. }));
+
+            if pending_group_by.is_some() || has_aggr {
+                // Must be Aggregate
+                let group_expr = pending_group_by.take().unwrap_or_default();
+
+                // Filter aggr_expr to strictly include AggregateExprs
+                // Non-aggregates (Columns) are assumed to be Group Keys or ignored for now.
+                // This ensures Schema (Keys + Aggs) matches Execution (Keys + Accs).
+                let actual_aggs: Vec<Expr> = exprs
+                    .into_iter()
+                    .filter(|e| matches!(e, Expr::AggregateExpr { .. }))
+                    .collect();
+
+                // If it's a global aggregation (no group by), group_expr is empty.
+                // We construct Aggregate plan.
+                current_plan = LogicalPlan::Aggregate {
+                    input: Box::new(current_plan),
+                    group_expr,
+                    aggr_expr: actual_aggs,
+                };
+            } else {
+                // Simple Projection (backward compat)
+                // Convert Expr::Column back to String
+                let cols: Vec<String> = exprs
+                    .iter()
+                    .map(|e| {
+                        if let Expr::Column(c) = e {
+                            Ok(c.clone())
+                        } else {
+                            // Projecting literals or unsupported exprs in Project?
+                            // Current LogicalPlan::Project only supports Columns.
+                            // If we have literal, we can't map to Project yet.
+                            // But parse_select_items only parses Col or AggFunc(Col).
+                            // So it should be fine.
+                            Err(DslError::Parse {
+                                line: line_no,
+                                msg: "Only columns supported in simple SELECT (Project)".into(),
+                            })
+                        }
+                    })
+                    .collect::<Result<_, _>>()?;
+
+                current_plan = LogicalPlan::Project {
+                    input: Box::new(current_plan),
+                    columns: cols,
+                };
+            }
+        } else if clauses_trimmed.starts_with("HAVING ") {
+            // HAVING comes after aggregation
+            let (cond_str, remaining) = split_clause(clauses_trimmed, "HAVING", &keywords);
+            clauses_str = remaining;
+
+            // Parse condition like filter
+            // But strictly it should match an output of Aggregation.
+            // For simplicity, reuse parse_filter_condition and wrap in Filter
+            // Because HAVING is just a Filter on the output of Aggregate.
+            let (col, op, val) = parse_filter_condition(cond_str, line_no)?;
+
+            current_plan = LogicalPlan::Filter {
                 input: Box::new(current_plan),
-                columns: cols,
+                predicate: Expr::BinaryExpr {
+                    left: Box::new(Expr::Column(col)),
+                    op,
+                    right: Box::new(Expr::Literal(val)),
+                },
             };
         } else if clauses_trimmed.starts_with("ORDER BY ") {
             let (order_str, remaining) = split_clause(clauses_trimmed, "ORDER BY", &keywords);
@@ -304,10 +591,23 @@ fn parse_column_definitions(columns_str: &str, line_no: usize) -> Result<Vec<Fie
         });
     }
 
+    // Split into comma arguments
+    // Ensure we stripped outer parens if they exist
+    let columns_str = columns_str.trim();
+    let inner = if columns_str.starts_with('(') && columns_str.ends_with(')') {
+        &columns_str[1..columns_str.len() - 1]
+    } else {
+        columns_str
+    };
+
+    println!("DEBUG: columns_str='{}'", columns_str);
+    println!("DEBUG: inner='{}'", inner);
+
     let mut fields = Vec::new();
 
-    // Split by comma
-    for col_def in inner.split(',') {
+    // Split by comma, respecting parentheses for types like Matrix(R, C)
+    let parts = split_args(inner);
+    for col_def in parts {
         let col_def = col_def.trim();
 
         // Split by colon: name: TYPE
@@ -330,6 +630,34 @@ fn parse_column_definitions(columns_str: &str, line_no: usize) -> Result<Vec<Fie
 }
 
 /// Parse a value type from string
+fn split_args(s: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut depth = 0;
+
+    for ch in s.chars() {
+        match ch {
+            '(' | '[' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' | ']' => {
+                depth -= 1;
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                args.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        args.push(current.trim().to_string());
+    }
+    args
+}
+
 fn parse_value_type(type_str: &str, line_no: usize) -> Result<ValueType, DslError> {
     let upper = type_str.to_uppercase();
     if upper == "INT" {
@@ -360,12 +688,119 @@ fn parse_value_type(type_str: &str, line_no: usize) -> Result<ValueType, DslErro
                 ),
             })
         }
+    } else if upper.starts_with("MATRIX") {
+        // Expected format: MATRIX(R, C)
+        let start = upper.find('(');
+        let end = upper.find(')');
+        if let (Some(s), Some(e)) = (start, end) {
+            let dims_str = &upper[s + 1..e];
+            let parts: Vec<&str> = dims_str.split(',').collect();
+            if parts.len() != 2 {
+                return Err(DslError::Parse {
+                    line: line_no,
+                    msg: format!(
+                        "Invalid Matrix definition: {}. Expected MATRIX(R, C)",
+                        type_str
+                    ),
+                });
+            }
+            let r: usize = parts[0].trim().parse().map_err(|_| DslError::Parse {
+                line: line_no,
+                msg: "Invalid rows".into(),
+            })?;
+            let c: usize = parts[1].trim().parse().map_err(|_| DslError::Parse {
+                line: line_no,
+                msg: "Invalid cols".into(),
+            })?;
+            Ok(ValueType::Matrix(r, c))
+        } else {
+            Err(DslError::Parse {
+                line: line_no,
+                msg: format!(
+                    "Invalid Matrix definition: {}. Expected MATRIX(R, C)",
+                    type_str
+                ),
+            })
+        }
     } else {
         Err(DslError::Parse {
             line: line_no,
             msg: format!("Unknown type: {}", type_str),
         })
     }
+}
+
+pub fn parse_single_value(s: &str, line_no: usize) -> Result<Value, DslError> {
+    let s = s.trim();
+
+    // String (quoted)
+    if s.starts_with('"') && s.ends_with('"') {
+        let content = &s[1..s.len() - 1];
+        return Ok(Value::String(content.to_string()));
+    }
+
+    // Boolean
+    if s == "true" {
+        return Ok(Value::Bool(true));
+    }
+    if s == "false" {
+        return Ok(Value::Bool(false));
+    }
+
+    // Float (has decimal point)
+    if s.contains('.') && !s.starts_with('[') {
+        return s
+            .parse::<f32>()
+            .map(Value::Float)
+            .map_err(|_| DslError::Parse {
+                line: line_no,
+                msg: format!("Invalid float: {}", s),
+            });
+    }
+
+    // Vector [val1, val2, ...] OR Matrix [[...], [...]]
+    if s.starts_with('[') && s.ends_with(']') {
+        let content = &s[1..s.len() - 1];
+        let parts = split_args(content);
+
+        // Detect Matrix: if first element is array?
+        if !parts.is_empty() && parts[0].starts_with('[') {
+            // Matrix
+            let mut matrix = Vec::new();
+            for p in parts {
+                if let Value::Vector(v) = parse_single_value(&p, line_no)? {
+                    matrix.push(v);
+                } else {
+                    return Err(DslError::Parse {
+                        line: line_no,
+                        msg: format!("Matrix elements must verify to vectors. Got: {}", p),
+                    });
+                }
+            }
+            return Ok(Value::Matrix(matrix));
+        }
+
+        let mut floats = Vec::with_capacity(parts.len());
+        for p in parts {
+            if p.is_empty() {
+                continue;
+            }
+            let f = p.parse::<f32>().map_err(|_| DslError::Parse {
+                line: line_no,
+                msg: format!("Invalid vector element: {}", p),
+            })?;
+            floats.push(f);
+        }
+        return Ok(Value::Vector(floats));
+    }
+
+    // Int
+    s.parse::<i64>()
+        .map(Value::Int)
+        .map_err(|_| DslError::Parse {
+            line: line_no,
+            msg: format!("Invalid value: {}", s),
+        })
 }
 
 /// INSERT INTO dataset_name VALUES (val1, val2, ...)
@@ -473,63 +908,6 @@ fn parse_tuple_values(
     Ok(values)
 }
 
-/// Parse a single value
-/// Re-used from existing implementation
-pub fn parse_single_value(s: &str, line_no: usize) -> Result<Value, DslError> {
-    let s = s.trim();
-
-    // String (quoted)
-    if s.starts_with('"') && s.ends_with('"') {
-        let content = &s[1..s.len() - 1];
-        return Ok(Value::String(content.to_string()));
-    }
-
-    // Boolean
-    if s == "true" {
-        return Ok(Value::Bool(true));
-    }
-    if s == "false" {
-        return Ok(Value::Bool(false));
-    }
-
-    // Float (has decimal point)
-    if s.contains('.') && !s.starts_with('[') {
-        return s
-            .parse::<f32>()
-            .map(Value::Float)
-            .map_err(|_| DslError::Parse {
-                line: line_no,
-                msg: format!("Invalid float: {}", s),
-            });
-    }
-
-    // Vector [val1, val2, ...]
-    if s.starts_with('[') && s.ends_with(']') {
-        let content = &s[1..s.len() - 1];
-        let parts: Vec<&str> = content.split(',').map(|s| s.trim()).collect();
-        let mut floats = Vec::with_capacity(parts.len());
-        for p in parts {
-            if p.is_empty() {
-                continue;
-            }
-            let f = p.parse::<f32>().map_err(|_| DslError::Parse {
-                line: line_no,
-                msg: format!("Invalid vector element: {}", p),
-            })?;
-            floats.push(f);
-        }
-        return Ok(Value::Vector(floats));
-    }
-
-    // Int
-    s.parse::<i64>()
-        .map(Value::Int)
-        .map_err(|_| DslError::Parse {
-            line: line_no,
-            msg: format!("Invalid value: {}", s),
-        })
-}
-
 /// Handle DATASET <name> ADD COLUMN <col>: <type> [DEFAULT <val>]
 fn handle_add_column(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     let rest = line.trim_start_matches("DATASET").trim();
@@ -590,6 +968,7 @@ fn handle_add_column(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
                 ValueType::String => Value::String(String::new()),
                 ValueType::Bool => Value::Bool(false),
                 ValueType::Vector(dim) => Value::Vector(vec![0.0; dim]),
+                ValueType::Matrix(r, c) => Value::Matrix(vec![vec![0.0; c]; r]),
                 ValueType::Null => Value::Null,
             }
         }
@@ -612,4 +991,167 @@ fn handle_add_column(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
         "Added column '{}' to dataset '{}'",
         column_name, dataset_name
     )))
+}
+
+fn parse_select_items(s: &str, line_no: usize) -> Result<Vec<Expr>, DslError> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Empty SELECT clause".into(),
+        });
+    }
+
+    let parts = split_args(s);
+    let mut exprs = Vec::new();
+
+    use crate::query::logical::{AggregateFunction, Expr};
+
+    for part in parts {
+        let part = part.trim();
+        if part == "*" {
+            exprs.push(Expr::Column("*".to_string()));
+            continue;
+        }
+        // Check for function call: FUNC(col)
+        // Check if it looks like Func Call (starts with Name + '(' and ends with ')')
+        // Be careful not to match (a+b) as function call.
+        if let Some(idx) = part.find('(') {
+            let possible_func = part[..idx].trim().to_uppercase();
+            // Validate if it is a known function
+            let func = match possible_func.as_str() {
+                "SUM" => Some(AggregateFunction::Sum),
+                "AVG" => Some(AggregateFunction::Avg),
+                "COUNT" => Some(AggregateFunction::Count),
+                "MIN" => Some(AggregateFunction::Min),
+                "MAX" => Some(AggregateFunction::Max),
+                _ => None,
+            };
+
+            if let Some(f) = func {
+                if part.ends_with(')') {
+                    let content = &part[idx + 1..part.len() - 1].trim();
+                    // Inner expr
+                    let inner = if *content == "*" {
+                        Expr::Literal(Value::Int(1))
+                    } else {
+                        parse_expression(content, line_no)?
+                    };
+
+                    exprs.push(Expr::AggregateExpr {
+                        func: f,
+                        expr: Box::new(inner),
+                    });
+                    continue;
+                }
+            }
+        }
+
+        // If not aggregation function, parse as expression
+        exprs.push(parse_expression(part, line_no)?);
+    }
+    Ok(exprs)
+}
+
+fn parse_expression(s: &str, line_no: usize) -> Result<Expr, DslError> {
+    parse_expr_add_sub(s, line_no)
+}
+
+fn parse_expr_add_sub(s: &str, line_no: usize) -> Result<Expr, DslError> {
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = chars.len();
+    let mut depth = 0;
+    let mut last_op_idx = None;
+    let mut last_op = ' ';
+
+    while i > 0 {
+        i -= 1;
+        let c = chars[i];
+        if c == ')' {
+            depth += 1;
+        } else if c == '(' {
+            depth -= 1;
+        } else if depth == 0 && (c == '+' || c == '-') {
+            last_op_idx = Some(i);
+            last_op = c;
+            break;
+        }
+    }
+
+    if let Some(idx) = last_op_idx {
+        let left_str = s[..idx].trim();
+        let right_str = s[idx + 1..].trim();
+
+        // Check if left_str is empty? (Unary ops not supported yet like -5)
+        // If left is empty, it's unary?
+        if left_str.is_empty() {
+            return Err(DslError::Parse {
+                line: line_no,
+                msg: "Unary operators not supported yet".into(),
+            });
+        }
+
+        let left = parse_expr_add_sub(left_str, line_no)?;
+        let right = parse_term_mul_div(right_str, line_no)?;
+
+        return Ok(Expr::BinaryExpr {
+            left: Box::new(left),
+            op: last_op.to_string(),
+            right: Box::new(right),
+        });
+    }
+
+    parse_term_mul_div(s, line_no)
+}
+
+fn parse_term_mul_div(s: &str, line_no: usize) -> Result<Expr, DslError> {
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = chars.len();
+    let mut depth = 0;
+    let mut last_op_idx = None;
+    let mut last_op = ' ';
+
+    while i > 0 {
+        i -= 1;
+        let c = chars[i];
+        if c == ')' {
+            depth += 1;
+        } else if c == '(' {
+            depth -= 1;
+        } else if depth == 0 && (c == '*' || c == '/') {
+            last_op_idx = Some(i);
+            last_op = c;
+            break;
+        }
+    }
+
+    if let Some(idx) = last_op_idx {
+        let left_str = s[..idx].trim();
+        let right_str = s[idx + 1..].trim();
+
+        let left = parse_term_mul_div(left_str, line_no)?;
+        let right = parse_factor(right_str, line_no)?;
+
+        return Ok(Expr::BinaryExpr {
+            left: Box::new(left),
+            op: last_op.to_string(),
+            right: Box::new(right),
+        });
+    }
+
+    parse_factor(s, line_no)
+}
+
+fn parse_factor(s: &str, line_no: usize) -> Result<Expr, DslError> {
+    let s = s.trim();
+    if s.starts_with('(') && s.ends_with(')') {
+        return parse_expression(&s[1..s.len() - 1], line_no);
+    }
+
+    if let Ok(val) = parse_single_value(s, line_no) {
+        Ok(Expr::Literal(val))
+    } else {
+        // Assume column.
+        Ok(Expr::Column(s.to_string()))
+    }
 }

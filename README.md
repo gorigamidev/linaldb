@@ -1,82 +1,108 @@
-# VectorDB
+# ⚡ VectorDB
 
-**VectorDB** is an experimental in-memory analytical engine for scientific computing, machine learning, and data analysis.
-It provides first-class support for vectors, matrices, and tensors, combined with structured datasets and a SQL-inspired DSL designed for expressive, readable computation.
+**VectorDB** is an experimental, in-memory analytical engine built for scientific computing, machine learning, and structured data analysis. It bridges the gap between Relational Databases and Tensor Computation, providing a SQL-like DSL that treats Vectors and Matrices as first-class citizens.
 
-## 🚀 Features
+---
 
--   **Tensor Operations**: Vectors, Matrices, Arithmetic, Dot Product, Similarity, Distance.
--   **Structured Datasets**: Define schemas, insert data, and query with `FILTER`, `SELECT`, `ORDER BY`.
--   **Server Mode**: Built-in HTTP server returning **TOON (Token-Oriented Object Notation)** responses.
--   **TOON Integration**: optimized output format for LLM consumption.
--   **REPL & CLI**: Interactive shell and script execution.
+## 🌟 Key Capabilities
 
-## 🔧 What VectorDB is (and is not)
+### 1. Hybrid Data Model
+Store structured data (Integers, Strings) alongside mathematical types (Vectors, Matrices) in the same dataset.
 
-### What VectorDB Is
+```rust
+DATASET analytics COLUMNS (
+    id: Int,
+    region: String,
+    features: Matrix(4, 4),  // 4x4 Matrix
+    embedding: Vector(128)   // 128-dim Vector
+)
+```
 
-- An embedded analytical engine
-- A DSL for scientific and ML-oriented data analysis
-- Optimized for in-memory computation
-- Designed for scripting, REPL usage, and service integration
+### 2. Analytical DSL
+Perform complex selection, filtering, and aggregation on all data types.
 
-### What VectorDB Is Not (Yet)
+```sql
+-- Select specific columns including matrix data
+SELECT region, features FROM analytics LIMIT 5
 
-- A distributed database
-- A transactional OLTP system
-- A replacement for NumPy or Postgres
+-- Filter using standard predicates
+SELECT * FROM analytics WHERE region = "North"
+```
 
-## 📦 Installation
+### 3. Matrix & Vector Aggregations
+VectorDB supports element-wise aggregations on complex types.
 
-Ensure you have Rust installed.
+```sql
+-- Element-wise Summation of Matrices by Region
+SELECT region, SUM(features) 
+FROM analytics 
+GROUP BY region
 
+-- Aggregation on Computed Expressions
+-- Scales the matrix by 2 before summing
+SELECT region, SUM(features * 2.0) 
+FROM analytics 
+GROUP BY region
+```
+
+### 4. Vector Similarity Search
+Built-in support for vector indexing and similarity search (KNN).
+
+```sql
+-- Create a Vector Index
+CREATE VECTOR INDEX emb_idx ON analytics(embedding)
+
+-- Find top 5 similar vectors
+SEARCH analytics 
+WHERE embedding ~= [0.1, 0.2, ... 128 values ...] 
+LIMIT 5
+```
+
+### 5. Multi-Paradigm Access
+*   **REPL**: Interactive shell for exploration (`cargo run`).
+*   **Scripting**: Run `.vdb` files (`cargo run -- run script.vdb`).
+*   **HTTP Server**: JSON-based API returning **TOON** (Token-Oriented Object Notation) for efficient LLM integration.
+
+---
+
+## Quick Start
+
+### Installation
 ```bash
 git clone https://github.com/yourusername/vector-db-rs.git
 cd vector-db-rs
 cargo build --release
 ```
 
-## 🛠 Usage
-
-### 1. Interactive REPL
-Run the database in interactive mode:
+### Running the Example
+We have a comprehensive feature demo script included.
 ```bash
-cargo run
+# Run the features demo
+cargo run -- run examples/features_demo.vdb
 ```
 
-### 2. Execute a Script
-Run a `.vdb` script file:
+### Interactive REPL
 ```bash
-cargo run -- run example.vdb
+$ cargo run
+> DEFINE v = [1, 2, 3]
+> SHOW v + 1
+[2, 3, 4]
 ```
 
-### 3. Server Mode
-Start the HTTP server (default port 8080):
-```bash
-cargo run -- server --port 8080
-```
-
-Send commands via HTTP (responds in `text/toon`):
-```bash
-curl -X POST -H "Content-Type: application/json" -d '{"command": "SHOW ALL"}' http://localhost:8080/execute
-```
-
-## 📘 Documentation
-
--   [DSL Reference](docs/DSL_REFERENCE.md) - Full guide to the Query Language.
--   [TOON Format](TOON_FORMAT.md) - Specification of the response format.
--   [New Features & Architecture](docs/NewFeatures.md) - detailed design docs.
+---
 
 ## 🏗 Architecture
 
--   **`core`**: Base types (`Tensor`, `Dataset`, `Value`).
--   **`engine`**: Database logic and operations.
--   **`dsl`**: Parser and execution handlers.
--   **`server`**: Axum-based HTTP server with TOON encoding.
+*   **Storage Engine**: In-memory columnar/row hybrid store with specialized indices (HashIndex, VectorIndex).
+*   **Query Engine**: Logical -> Physical plan optimization with predicate pushdown.
+*   **Type System**: Strong typing with inference for arithmetic expressions (`Matrix + Float = Matrix`).
 
-## 🧪 Testing
+## � Documentation
 
-Run the test suite:
-```bash
-cargo test
-```
+*   [DSL Reference](docs/DSL_REFERENCE.md)
+*   [Roadmap & Status](docs/ROADMAP.md)
+*   [TOON Format](TOON_FORMAT.md)
+
+---
+
+**VectorDB**: *Where SQL meets Linear Algebra.*

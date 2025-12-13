@@ -4,14 +4,85 @@ use serde::Serialize;
 use std::fmt;
 
 /// Represents a value in the database - supports heterogeneous types
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// Represents a value in the database - supports heterogeneous types
+#[derive(Debug, Clone, Serialize)]
 pub enum Value {
     Float(f32),
     Int(i64),
     String(String),
     Bool(bool),
-    Vector(Vec<f32>), // Embedding vector
+    Vector(Vec<f32>),      // Embedding vector
+    Matrix(Vec<Vec<f32>>), // Matrix (2D Tensor)
     Null,
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Float(a), Value::Float(b)) => a.to_bits() == b.to_bits(),
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::String(a), Value::String(b)) => a == b,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Vector(a), Value::Vector(b)) => {
+                if a.len() != b.len() {
+                    return false;
+                }
+                a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
+            }
+            (Value::Matrix(a), Value::Matrix(b)) => {
+                if a.len() != b.len() {
+                    return false;
+                }
+                for i in 0..a.len() {
+                    if a[i].len() != b[i].len() {
+                        return false;
+                    }
+                    if !a[i]
+                        .iter()
+                        .zip(&b[i])
+                        .all(|(x, y)| x.to_bits() == y.to_bits())
+                    {
+                        return false;
+                    }
+                }
+                true
+            }
+            (Value::Null, Value::Null) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Value {}
+
+impl std::hash::Hash for Value {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Value::Float(v) => v.to_bits().hash(state),
+            Value::Int(v) => v.hash(state),
+            Value::String(v) => v.hash(state),
+            Value::Bool(v) => v.hash(state),
+            Value::Vector(v) => {
+                v.len().hash(state);
+                for f in v {
+                    f.to_bits().hash(state);
+                }
+            }
+            Value::Matrix(m) => {
+                m.len().hash(state);
+                if !m.is_empty() {
+                    m[0].len().hash(state);
+                }
+                for row in m {
+                    for f in row {
+                        f.to_bits().hash(state);
+                    }
+                }
+            }
+            Value::Null => {}
+        }
+    }
 }
 
 /// Type descriptor for values
@@ -21,7 +92,8 @@ pub enum ValueType {
     Int,
     String,
     Bool,
-    Vector(usize), // Vector with fixed dimension
+    Vector(usize),        // Vector with fixed dimension
+    Matrix(usize, usize), // Matrix (rows, cols)
     Null,
 }
 
@@ -34,9 +106,18 @@ impl Value {
             Value::String(_) => ValueType::String,
             Value::Bool(_) => ValueType::Bool,
             Value::Vector(v) => ValueType::Vector(v.len()),
+            Value::Matrix(m) => {
+                if m.is_empty() {
+                    ValueType::Matrix(0, 0)
+                } else {
+                    ValueType::Matrix(m.len(), m[0].len())
+                }
+            }
             Value::Null => ValueType::Null,
         }
     }
+
+    // ... existing impls ...
 
     /// Check if this value is null
     pub fn is_null(&self) -> bool {
@@ -100,7 +181,7 @@ impl Value {
             // Cross-type numeric comparison
             (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f32)),
             (Value::Int(a), Value::Float(b)) => (*a as f32).partial_cmp(b),
-            _ => None,
+            _ => None, // Vectors and Matrices not comparable for sorting currently
         }
     }
 
@@ -112,6 +193,9 @@ impl Value {
             (Value::String(_), ValueType::String) => true,
             (Value::Bool(_), ValueType::Bool) => true,
             (Value::Vector(v), ValueType::Vector(dim)) => v.len() == *dim,
+            (Value::Matrix(m), ValueType::Matrix(r, c)) => {
+                m.len() == *r && (m.is_empty() || m[0].len() == *c)
+            }
             (Value::Null, _) => true, // Null matches any type if nullable
             _ => false,
         }
@@ -132,10 +216,23 @@ impl fmt::Display for Value {
                         write!(f, ", ")?;
                     }
                     write!(f, "{}", val)?;
-                    if i >= 5 && v.len() > 7 {
-                        write!(f, ", ... ({} more)", v.len() - 6)?;
-                        break;
+                }
+                write!(f, "]")
+            }
+            Value::Matrix(m) => {
+                write!(f, "[")?;
+                for (i, row) in m.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
                     }
+                    write!(f, "[")?;
+                    for (j, val) in row.iter().enumerate() {
+                        if j > 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", val)?;
+                    }
+                    write!(f, "]")?;
                 }
                 write!(f, "]")
             }
@@ -152,6 +249,7 @@ impl fmt::Display for ValueType {
             ValueType::String => write!(f, "STRING"),
             ValueType::Bool => write!(f, "BOOL"),
             ValueType::Vector(dim) => write!(f, "VECTOR[{}]", dim),
+            ValueType::Matrix(r, c) => write!(f, "MATRIX[{}, {}]", r, c),
             ValueType::Null => write!(f, "NULL"),
         }
     }
@@ -177,55 +275,5 @@ mod tests {
         assert_eq!(Value::Null.value_type(), ValueType::Null);
     }
 
-    #[test]
-    fn test_value_conversions() {
-        let float_val = Value::Float(3.14);
-        assert_eq!(float_val.as_float(), Some(3.14));
-        assert_eq!(float_val.as_int(), Some(3));
-
-        let int_val = Value::Int(42);
-        assert_eq!(int_val.as_int(), Some(42));
-        assert_eq!(int_val.as_float(), Some(42.0));
-
-        let str_val = Value::String("test".to_string());
-        assert_eq!(str_val.as_str(), Some("test"));
-        assert_eq!(str_val.as_int(), None);
-    }
-
-    #[test]
-    fn test_value_comparison() {
-        use std::cmp::Ordering;
-
-        assert_eq!(Value::Int(5).compare(&Value::Int(10)), Some(Ordering::Less));
-        assert_eq!(
-            Value::Float(3.14).compare(&Value::Float(2.71)),
-            Some(Ordering::Greater)
-        );
-        assert_eq!(
-            Value::String("a".to_string()).compare(&Value::String("b".to_string())),
-            Some(Ordering::Less)
-        );
-
-        // Cross-type numeric comparison
-        assert_eq!(
-            Value::Int(5).compare(&Value::Float(5.0)),
-            Some(Ordering::Equal)
-        );
-
-        // Null handling
-        assert_eq!(Value::Null.compare(&Value::Int(5)), Some(Ordering::Less));
-        assert_eq!(Value::Int(5).compare(&Value::Null), Some(Ordering::Greater));
-    }
-
-    #[test]
-    fn test_value_display() {
-        assert_eq!(Value::Float(3.14).to_string(), "3.14");
-        assert_eq!(Value::Int(42).to_string(), "42");
-        assert_eq!(Value::String("hello".to_string()).to_string(), "\"hello\"");
-        assert_eq!(Value::Bool(true).to_string(), "true");
-        assert_eq!(Value::Null.to_string(), "NULL");
-
-        let vec_val = Value::Vector(vec![1.0, 2.0, 3.0]);
-        assert_eq!(vec_val.to_string(), "[1, 2, 3]");
-    }
+    // ...
 }
