@@ -435,6 +435,132 @@ pub fn index(a: &Tensor, indices: &[usize]) -> Result<f32, String> {
     Ok(a.data[flat_idx])
 }
 
+/// Index into a tensor and return result as a scalar tensor
+pub fn index_to_scalar(a: &Tensor, indices: &[usize], new_id: TensorId) -> Result<Tensor, String> {
+    let value = index(a, indices)?;
+    // Create scalar tensor (rank 0)
+    let shape = Shape::new(vec![]);
+    Tensor::new(new_id, shape, vec![value])
+}
+
+/// Slice specification for a single dimension
+#[derive(Debug, Clone)]
+pub enum SliceSpec {
+    /// Single index: reduces dimension
+    Index(usize),
+    /// Range: start..end (inclusive start, exclusive end)
+    Range(usize, usize),
+    /// Wildcard: entire dimension
+    All,
+}
+
+/// Multi-dimensional slicing
+/// Supports: m[0, *], m[0:2, :], m[*, 1], etc.
+pub fn slice_multi(a: &Tensor, specs: &[SliceSpec], new_id: TensorId) -> Result<Tensor, String> {
+    if specs.len() != a.shape.rank() {
+        return Err(format!(
+            "Slice spec dimension mismatch: tensor has rank {}, got {} specs",
+            a.shape.rank(),
+            specs.len()
+        ));
+    }
+
+    // For rank-1 (vectors)
+    if a.shape.rank() == 1 {
+        match &specs[0] {
+            SliceSpec::Index(idx) => {
+                // Single element -> scalar
+                index_to_scalar(a, &[*idx], new_id)
+            }
+            SliceSpec::Range(start, end) => {
+                // Range -> vector slice
+                slice(a, 0, *start, *end, new_id)
+            }
+            SliceSpec::All => {
+                // Entire vector -> copy
+                Ok(a.clone())
+            }
+        }
+    }
+    // For rank-2 (matrices)
+    else if a.shape.rank() == 2 {
+        let rows = a.shape.dims[0];
+        let cols = a.shape.dims[1];
+
+        match (&specs[0], &specs[1]) {
+            // Single element: m[i, j]
+            (SliceSpec::Index(i), SliceSpec::Index(j)) => index_to_scalar(a, &[*i, *j], new_id),
+            // Row slice: m[i, *] or m[i, :]
+            (SliceSpec::Index(i), SliceSpec::All) => {
+                // Extract row as vector
+                let mut data = Vec::with_capacity(cols);
+                for j in 0..cols {
+                    data.push(a.data[i * cols + j]);
+                }
+                let shape = Shape::new(vec![cols]);
+                Tensor::new(new_id, shape, data)
+            }
+            // Column slice: m[*, j] or m[:, j]
+            (SliceSpec::All, SliceSpec::Index(j)) => {
+                // Extract column as vector
+                let mut data = Vec::with_capacity(rows);
+                for i in 0..rows {
+                    data.push(a.data[i * cols + j]);
+                }
+                let shape = Shape::new(vec![rows]);
+                Tensor::new(new_id, shape, data)
+            }
+            // Row range: m[i:k, *]
+            (SliceSpec::Range(start, end), SliceSpec::All) => slice(a, 0, *start, *end, new_id),
+            // Column range: m[*, j:k]
+            (SliceSpec::All, SliceSpec::Range(start, end)) => slice(a, 1, *start, *end, new_id),
+            // Submatrix: m[i:k, j:l]
+            (SliceSpec::Range(row_start, row_end), SliceSpec::Range(col_start, col_end)) => {
+                let new_rows = row_end - row_start;
+                let new_cols = col_end - col_start;
+                let mut data = Vec::with_capacity(new_rows * new_cols);
+
+                for i in *row_start..*row_end {
+                    for j in *col_start..*col_end {
+                        data.push(a.data[i * cols + j]);
+                    }
+                }
+
+                let shape = Shape::new(vec![new_rows, new_cols]);
+                Tensor::new(new_id, shape, data)
+            }
+            // Full matrix: m[*, *]
+            (SliceSpec::All, SliceSpec::All) => Ok(a.clone()),
+            // Mixed cases with ranges
+            (SliceSpec::Index(i), SliceSpec::Range(start, end)) => {
+                // Row i, columns start:end -> vector
+                let new_cols = end - start;
+                let mut data = Vec::with_capacity(new_cols);
+                for j in *start..*end {
+                    data.push(a.data[i * cols + j]);
+                }
+                let shape = Shape::new(vec![new_cols]);
+                Tensor::new(new_id, shape, data)
+            }
+            (SliceSpec::Range(start, end), SliceSpec::Index(j)) => {
+                // Rows start:end, column j -> vector
+                let new_rows = end - start;
+                let mut data = Vec::with_capacity(new_rows);
+                for i in *start..*end {
+                    data.push(a.data[i * cols + j]);
+                }
+                let shape = Shape::new(vec![new_rows]);
+                Tensor::new(new_id, shape, data)
+            }
+        }
+    } else {
+        Err(format!(
+            "Multi-dimensional slicing not yet implemented for rank-{} tensors",
+            a.shape.rank()
+        ))
+    }
+}
+
 /// Stack a list of tensors along a new axis (0 for now)
 /// All tensors must have the same shape.
 /// Result rank = Input rank + 1

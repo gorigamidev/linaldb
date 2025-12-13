@@ -32,11 +32,46 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
 
     let expr = parts[1].trim();
     let tokens: Vec<&str> = expr.split_whitespace().collect();
+
     if tokens.is_empty() {
         return Err(DslError::Parse {
             line: line_no,
             msg: "Missing expression in LET".into(),
         });
+    }
+
+    // Check if the command starts with a known operation keyword
+    // This prevents valid commands like "RESHAPE ... [ ... ]" from being misidentified as indexing
+    let is_keyword = matches!(
+        tokens[0],
+        "ADD"
+            | "SUBTRACT"
+            | "MULTIPLY"
+            | "DIVIDE"
+            | "CORRELATE"
+            | "SIMILARITY"
+            | "DISTANCE"
+            | "MATMUL"
+            | "TRANSPOSE"
+            | "RESHAPE"
+            | "STACK"
+    );
+
+    if !is_keyword {
+        // Check for infix operator: a + b
+        if let Some((left, op, right)) = parse_infix_op(expr) {
+            return handle_infix_op(db, output_name, left, op, right, line_no);
+        }
+
+        // Check for dot notation: name.field
+        if expr.contains('.') && !expr.contains('[') {
+            return handle_dot_notation(db, output_name, expr, line_no);
+        }
+
+        // Check for indexing syntax: name[indices]
+        if expr.contains('[') && expr.contains(']') {
+            return handle_indexing(db, output_name, expr, line_no);
+        }
     }
 
     match tokens[0] {
@@ -297,4 +332,242 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
         }),
     }
     .map(|_| DslOutput::Message(format!("Defined variable: {}", output_name)))
+}
+
+/// Handle indexing expressions: name[i, j, ...] or name[i:j, *]
+fn handle_indexing(
+    db: &mut TensorDb,
+    output_name: &str,
+    expr: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
+    use crate::engine::kernels::SliceSpec;
+
+    // Parse: tensor_name[spec1, spec2, ...]
+    let bracket_start = expr.find('[').ok_or_else(|| DslError::Parse {
+        line: line_no,
+        msg: "Expected '[' in indexing expression".into(),
+    })?;
+
+    let bracket_end = expr.find(']').ok_or_else(|| DslError::Parse {
+        line: line_no,
+        msg: "Expected ']' in indexing expression".into(),
+    })?;
+
+    if bracket_end <= bracket_start {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Invalid bracket positions in indexing expression".into(),
+        });
+    }
+
+    let tensor_name = expr[..bracket_start].trim();
+    let specs_str = &expr[bracket_start + 1..bracket_end];
+
+    // Parse specs: "0, 1" or "0:2, *" or "*, 1"
+    let spec_parts: Vec<&str> = specs_str.split(',').map(|s| s.trim()).collect();
+    let mut specs = Vec::new();
+    let mut all_indices = true; // Track if all specs are simple indices
+
+    for part in spec_parts {
+        if part == "*" || part == ":" {
+            // Wildcard: entire dimension
+            specs.push(SliceSpec::All);
+            all_indices = false;
+        } else if part.contains(':') {
+            // Range: start:end
+            let range_parts: Vec<&str> = part.split(':').collect();
+            if range_parts.len() != 2 {
+                return Err(DslError::Parse {
+                    line: line_no,
+                    msg: format!("Invalid range spec: {}", part),
+                });
+            }
+
+            let start = range_parts[0]
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| DslError::Parse {
+                    line: line_no,
+                    msg: format!("Invalid range start: {}", range_parts[0]),
+                })?;
+
+            let end = range_parts[1]
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| DslError::Parse {
+                    line: line_no,
+                    msg: format!("Invalid range end: {}", range_parts[1]),
+                })?;
+
+            specs.push(SliceSpec::Range(start, end));
+            all_indices = false;
+        } else {
+            // Single index
+            let idx = part.parse::<usize>().map_err(|_| DslError::Parse {
+                line: line_no,
+                msg: format!("Invalid index: {}", part),
+            })?;
+            specs.push(SliceSpec::Index(idx));
+        }
+    }
+
+    // If all specs are simple indices, use eval_index for backwards compatibility
+    if all_indices {
+        let indices: Vec<usize> = specs
+            .iter()
+            .filter_map(|s| {
+                if let SliceSpec::Index(idx) = s {
+                    Some(*idx)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        db.eval_index(output_name, tensor_name, indices)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
+    } else {
+        // Use eval_slice for advanced indexing
+        db.eval_slice(output_name, tensor_name, specs)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
+    }
+
+    Ok(DslOutput::Message(format!(
+        "Defined variable: {}",
+        output_name
+    )))
+}
+
+/// Handle dot notation: name.field
+fn handle_dot_notation(
+    db: &mut TensorDb,
+    output_name: &str,
+    expr: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
+    // Parse: object_name.field_name
+    let parts: Vec<&str> = expr.split('.').collect();
+    if parts.len() != 2 {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected: object.field".into(),
+        });
+    }
+
+    let object_name = parts[0].trim();
+    let field_name = parts[1].trim();
+
+    // Try as dataset column access first
+    if db.get_dataset(object_name).is_ok() {
+        db.eval_column_access(output_name, object_name, field_name)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
+    } else {
+        // Try as tuple field access
+        db.eval_field_access(output_name, object_name, field_name)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
+    }
+
+    Ok(DslOutput::Message(format!(
+        "Defined variable: {}",
+        output_name
+    )))
+}
+
+fn parse_infix_op(expr: &str) -> Option<(&str, crate::engine::BinaryOp, &str)> {
+    use crate::engine::BinaryOp;
+    let ops = [
+        ("+", BinaryOp::Add),
+        ("-", BinaryOp::Subtract),
+        ("*", BinaryOp::Multiply),
+        ("/", BinaryOp::Divide),
+    ];
+
+    // Find the first operator that is NOT inside brackets
+    let mut bracket_level = 0;
+    for (i, c) in expr.char_indices() {
+        if c == '[' {
+            bracket_level += 1;
+        } else if c == ']' {
+            bracket_level -= 1;
+        } else if bracket_level == 0 {
+            // Check if this character matches any operator
+            for (sym, op) in &ops {
+                if expr[i..].starts_with(sym) {
+                    return Some((expr[..i].trim(), op.clone(), expr[i + sym.len()..].trim()));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn evaluate_operand(
+    db: &mut TensorDb,
+    expr: &str,
+    base_name: &str,
+    suffix: &str,
+    line_no: usize,
+) -> Result<String, DslError> {
+    let expr = expr.trim();
+
+    // Check if it's indexing: name[indices]
+    if expr.contains('[') && expr.ends_with(']') {
+        // Use a unique enough name for the temporary variable
+        let temp_name = format!("_tmp_{}_{}", base_name, suffix);
+        handle_indexing(db, &temp_name, expr, line_no)?;
+        return Ok(temp_name);
+    }
+
+    // Check if it's dot notation: name.field
+    if expr.contains('.') && !expr.contains('[') {
+        let temp_name = format!("_tmp_{}_{}", base_name, suffix);
+        handle_dot_notation(db, &temp_name, expr, line_no)?;
+        return Ok(temp_name);
+    }
+
+    // Otherwise assume it's a variable name
+    Ok(expr.to_string())
+}
+
+fn handle_infix_op(
+    db: &mut TensorDb,
+    output_name: &str,
+    left: &str,
+    op: crate::engine::BinaryOp,
+    right: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
+    // Generate timestamp-based suffix for uniqueness to avoid collision in tight loops
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+
+    let left_name = evaluate_operand(db, left, output_name, &format!("L_{}", timestamp), line_no)?;
+    let right_name =
+        evaluate_operand(db, right, output_name, &format!("R_{}", timestamp), line_no)?;
+
+    db.eval_binary(output_name, &left_name, &right_name, op)
+        .map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
+
+    Ok(DslOutput::Message(format!(
+        "Defined variable: {}",
+        output_name
+    )))
 }

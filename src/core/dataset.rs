@@ -300,6 +300,21 @@ impl Dataset {
         new_dataset
     }
 
+    /// Get a column as a vector of values
+    pub fn get_column(&self, column_name: &str) -> Result<Vec<super::value::Value>, String> {
+        let col_idx = self
+            .schema
+            .get_field_index(column_name)
+            .ok_or_else(|| format!("Column '{}' not found", column_name))?;
+
+        let mut column_values = Vec::with_capacity(self.rows.len());
+        for row in &self.rows {
+            column_values.push(row.values[col_idx].clone());
+        }
+
+        Ok(column_values)
+    }
+
     /// Add a new column to the dataset with a default value
     /// This creates a new schema and updates all existing rows
     pub fn add_column(

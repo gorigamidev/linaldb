@@ -340,4 +340,143 @@ impl TensorDb {
             .add_column(column_name, value_type, default_value, nullable)
             .map_err(|e| EngineError::InvalidOp(e))
     }
+
+    /// Index into a tensor: output = tensor[indices]
+    pub fn eval_index(
+        &mut self,
+        output_name: impl Into<String>,
+        tensor_name: &str,
+        indices: Vec<usize>,
+    ) -> Result<(), EngineError> {
+        let (tensor_ref, kind) = self.get_with_kind(tensor_name)?;
+        let tensor = tensor_ref.clone();
+        let new_id = self.store.gen_id_internal();
+
+        let result = super::kernels::index_to_scalar(&tensor, &indices, new_id)
+            .map_err(EngineError::InvalidOp)?;
+
+        let out_id = self.store.insert_existing_tensor(result)?;
+        self.names
+            .insert(output_name.into(), NameEntry { id: out_id, kind });
+        Ok(())
+    }
+
+    /// Slice a tensor: output = tensor[slice_specs]
+    pub fn eval_slice(
+        &mut self,
+        output_name: impl Into<String>,
+        tensor_name: &str,
+        specs: Vec<super::kernels::SliceSpec>,
+    ) -> Result<(), EngineError> {
+        let (tensor_ref, kind) = self.get_with_kind(tensor_name)?;
+        let tensor = tensor_ref.clone();
+        let new_id = self.store.gen_id_internal();
+
+        let result =
+            super::kernels::slice_multi(&tensor, &specs, new_id).map_err(EngineError::InvalidOp)?;
+
+        let out_id = self.store.insert_existing_tensor(result)?;
+        self.names
+            .insert(output_name.into(), NameEntry { id: out_id, kind });
+        Ok(())
+    }
+
+    /// Access a tuple field: output = tuple.field
+    /// Returns the field value as a scalar tensor
+    pub fn eval_field_access(
+        &mut self,
+        output_name: impl Into<String>,
+        tuple_name: &str,
+        field_name: &str,
+    ) -> Result<(), EngineError> {
+        // For now, we'll store tuples as datasets with a single row
+        // This is a simplification - in the future we might have dedicated tuple storage
+        let dataset = self.get_dataset(tuple_name)?;
+
+        if dataset.rows.is_empty() {
+            return Err(EngineError::InvalidOp(format!(
+                "Cannot access field of empty dataset '{}'",
+                tuple_name
+            )));
+        }
+
+        // Get the first row (treating dataset as tuple)
+        let row = &dataset.rows[0];
+        let value = row
+            .get(field_name)
+            .ok_or_else(|| EngineError::InvalidOp(format!("Field '{}' not found", field_name)))?
+            .clone(); // Clone to avoid borrow issues
+
+        // Convert value to scalar tensor
+        let new_id = self.store.gen_id_internal();
+        let shape = crate::core::tensor::Shape::new(vec![]);
+
+        let tensor_data = match value {
+            crate::core::value::Value::Float(f) => vec![f],
+            crate::core::value::Value::Int(i) => vec![i as f32],
+            crate::core::value::Value::Bool(b) => vec![if b { 1.0 } else { 0.0 }],
+            _ => {
+                return Err(EngineError::InvalidOp(format!(
+                    "Cannot convert field '{}' to tensor",
+                    field_name
+                )))
+            }
+        };
+
+        let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data)
+            .map_err(|e| EngineError::InvalidOp(e))?;
+
+        let out_id = self.store.insert_existing_tensor(tensor)?;
+        self.names.insert(
+            output_name.into(),
+            NameEntry {
+                id: out_id,
+                kind: TensorKind::Normal,
+            },
+        );
+        Ok(())
+    }
+
+    /// Extract a column from a dataset: output = dataset.column
+    /// Returns the column as a vector tensor
+    pub fn eval_column_access(
+        &mut self,
+        output_name: impl Into<String>,
+        dataset_name: &str,
+        column_name: &str,
+    ) -> Result<(), EngineError> {
+        // Clone the dataset to avoid borrow issues
+        let dataset = self.get_dataset(dataset_name)?.clone();
+        let column_values = dataset
+            .get_column(column_name)
+            .map_err(|e| EngineError::InvalidOp(e))?;
+
+        // Convert column values to tensor
+        let new_id = self.store.gen_id_internal();
+        let shape = crate::core::tensor::Shape::new(vec![column_values.len()]);
+
+        let tensor_data: Result<Vec<f32>, String> = column_values
+            .iter()
+            .map(|v| match v {
+                crate::core::value::Value::Float(f) => Ok(*f),
+                crate::core::value::Value::Int(i) => Ok(*i as f32),
+                crate::core::value::Value::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
+                _ => Err(format!("Cannot convert value to tensor: {:?}", v)),
+            })
+            .collect();
+
+        let tensor_data = tensor_data.map_err(|e| EngineError::InvalidOp(e))?;
+        let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data)
+            .map_err(|e| EngineError::InvalidOp(e))?;
+
+        let out_id = self.store.insert_existing_tensor(tensor)?;
+        self.names.insert(
+            output_name.into(),
+            NameEntry {
+                id: out_id,
+                kind: TensorKind::Normal,
+            },
+        );
+        Ok(())
+    }
 }

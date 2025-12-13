@@ -87,11 +87,11 @@ This section refines and extends the roadmap starting from Phase 5.5, with the e
 - [x] Implement ADD COLUMN for datasets
   - Support computed columns (`ADD COLUMN x = a + b`)
   - Lazy vs materialized column evaluation
-- [ ] Add indexing syntax in expressions
+- [x] Add indexing syntax in expressions
   - Tensor indexing: `m[0, *]`, `m[:, 1]`
   - Tuple access: `row.field`, `dataset.column`
-- [ ] Improve expression typing and error messages
-- [ ] Extend SHOW to fully cover:
+- [x] Improve expression typing and error messages
+- [x] Extend SHOW to fully cover:
   - Scalars, vectors, matrices, tensors
   - Tuples and datasets
 
