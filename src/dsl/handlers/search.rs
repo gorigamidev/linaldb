@@ -1,6 +1,8 @@
 use crate::core::value::Value;
 use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
+use crate::query::logical::LogicalPlan;
+use crate::query::planner::Planner;
 
 use super::dataset::parse_single_value;
 
@@ -86,50 +88,33 @@ pub fn handle_search(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
         }
     };
 
-    // Get source dataset
+    // Get source dataset schema
     let source_ds = db.get_dataset(source_name).map_err(|e| DslError::Engine {
         line: line_no,
         source: e,
     })?;
+    let source_schema = source_ds.schema.clone();
 
-    // Get Index
-    let index = source_ds
-        .get_index(column_name)
-        .ok_or_else(|| DslError::Engine {
-            line: line_no,
-            source: crate::engine::error::EngineError::InvalidOp(format!(
-                "No index found on column '{}'. SEARCH currently requires an index.",
-                column_name
-            )),
-        })?;
+    let search_plan = build_search_plan(source_name, source_schema, column_name, query_tensor, k);
 
-    if index.index_type() != crate::core::index::IndexType::Vector {
-        return Err(DslError::Engine {
-            line: line_no,
-            source: crate::engine::error::EngineError::InvalidOp(format!(
-                "Index on '{}' is not a VECTOR index.",
-                column_name
-            )),
-        });
-    }
+    // Execute Plan
+    let planner = Planner::new(db);
+    let physical_plan =
+        planner
+            .create_physical_plan(&search_plan)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
 
-    // Perform Search
-    let results = index
-        .search(&query_tensor, k)
-        .map_err(|e| DslError::Engine {
-            line: line_no,
-            source: crate::engine::error::EngineError::InvalidOp(e),
-        })?;
-
-    // Results are (row_id, score)
-    // We want to return a Dataset with the actual rows.
-    // Ideally we should preserve order. `get_rows_by_ids` does preserve order of input IDs.
-    let row_ids: Vec<usize> = results.iter().map(|(id, _)| *id).collect();
-    let matched_rows = source_ds.get_rows_by_ids(&row_ids);
+    let result_rows = physical_plan.execute(db).map_err(|e| DslError::Engine {
+        line: line_no,
+        source: e,
+    })?;
+    let result_schema = physical_plan.schema();
 
     // Create target dataset
-    // We use the same schema as source
-    db.create_dataset(target_name.to_string(), source_ds.schema.clone())
+    db.create_dataset(target_name.to_string(), result_schema.clone())
         .map_err(|e| DslError::Engine {
             line: line_no,
             source: e,
@@ -142,11 +127,34 @@ pub fn handle_search(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
             source: e,
         })?;
 
-    target_ds.rows = matched_rows;
-    // Update stats?
+    target_ds.rows = result_rows;
+    target_ds
+        .metadata
+        .update_stats(&target_ds.schema, &target_ds.rows);
 
     Ok(DslOutput::Message(format!(
         "Search completed. Found {} results.",
         target_ds.len()
     )))
+}
+
+pub fn build_search_plan(
+    source_name: &str,
+    source_schema: std::sync::Arc<crate::core::tuple::Schema>,
+    column_name: &str,
+    query_tensor: crate::core::tensor::Tensor,
+    k: usize,
+) -> LogicalPlan {
+    // Scan -> VectorSearch
+    let scan = LogicalPlan::Scan {
+        dataset_name: source_name.to_string(),
+        schema: source_schema,
+    };
+
+    LogicalPlan::VectorSearch {
+        input: Box::new(scan),
+        column: column_name.to_string(),
+        query: query_tensor,
+        k,
+    }
 }

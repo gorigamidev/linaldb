@@ -1,4 +1,5 @@
 pub mod dataset;
+pub mod explain;
 pub mod index;
 pub mod introspection;
 pub mod operations;

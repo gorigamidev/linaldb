@@ -92,6 +92,9 @@ pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Dsl
         handlers::dataset::handle_insert(db, line, line_no)
     } else if line.starts_with("SEARCH ") {
         handlers::search::handle_search(db, line, line_no)
+    } else if line.starts_with("EXPLAIN ") {
+        // Added EXPLAIN routing
+        handlers::explain::handle_explain(db, line, line_no)
     } else if line.starts_with("CREATE ") {
         // Check for CREATE INDEX or CREATE VECTOR INDEX
         if line.contains("INDEX ") {

@@ -1,7 +1,6 @@
 use crate::core::tuple::{Field, Schema, Tuple};
 use crate::core::value::{Value, ValueType};
 use crate::engine::TensorDb;
-use std::cmp::Ordering;
 use std::sync::Arc;
 
 use crate::dsl::{DslError, DslOutput};
@@ -60,12 +59,61 @@ fn handle_dataset_creation(
     Ok(DslOutput::Message(format!("Created dataset: {}", name)))
 }
 
+use crate::query::logical::{Expr, LogicalPlan};
+use crate::query::planner::Planner;
+
 /// DATASET target FROM source [FILTER col > val] [SELECT col1, col2] [ORDER BY col [DESC]] [LIMIT n]
 fn handle_dataset_query(
     db: &mut TensorDb,
     line: &str,
     line_no: usize,
 ) -> Result<DslOutput, DslError> {
+    let (target_name, current_plan) = build_dataset_query_plan(db, line, line_no)?;
+
+    // Plan & Execute
+    let planner = Planner::new(db);
+    let physical_plan =
+        planner
+            .create_physical_plan(&current_plan)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
+
+    let result_rows = physical_plan.execute(db).map_err(|e| DslError::Engine {
+        line: line_no,
+        source: e,
+    })?;
+    let result_schema = physical_plan.schema();
+
+    // Create target dataset
+    db.create_dataset(target_name.to_string(), result_schema)
+        .map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
+
+    // Insert rows into target
+    let target_ds = db
+        .get_dataset_mut(&target_name)
+        .map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
+    target_ds.rows = result_rows;
+    // Update metadata/stats
+    target_ds
+        .metadata
+        .update_stats(&target_ds.schema, &target_ds.rows);
+
+    Ok(DslOutput::None)
+}
+
+pub fn build_dataset_query_plan(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<(String, LogicalPlan), DslError> {
     let rest = line.trim_start_matches("DATASET").trim();
 
     // Split into target and FROM source...
@@ -77,17 +125,8 @@ fn handle_dataset_query(
         });
     }
 
-    let target_name = parts[0].trim();
+    let target_name = parts[0].trim().to_string();
     let query_part = parts[1].trim();
-
-    // Parse source name (first word of query_part) and the rest
-    // But query_part might just be source_name if no other clauses.
-    // We need to find the start of the next clause.
-    // Clauses: FILTER, SELECT, ORDER BY, LIMIT
-    // We can assume they appear in that order for simplicity, or we can parse iteratively.
-    // Iterative parsing:
-    // source_name is until the first whitespace that is followed by a keyword?
-    // Or just look for keywords.
 
     let keywords = ["FILTER", "SELECT", "ORDER BY", "LIMIT"];
     let mut first_keyword_idx = None;
@@ -110,15 +149,20 @@ fn handle_dataset_query(
         (query_part.trim(), "")
     };
 
-    // Get source dataset (snapshot)
+    // Get source dataset schema for validation
     let source_ds = db.get_dataset(source_name).map_err(|e| DslError::Engine {
         line: line_no,
         source: e,
     })?;
-    let mut working_ds = source_ds.clone();
+    let source_schema = source_ds.schema.clone();
+
+    // Initial Plan: Scan
+    let mut current_plan = LogicalPlan::Scan {
+        dataset_name: source_name.to_string(),
+        schema: source_schema.clone(),
+    };
 
     // Process clauses
-    // Strategy: consume clauses_str until empty
     while !clauses_str.is_empty() {
         let clauses_trimmed = clauses_str.trim();
 
@@ -129,29 +173,23 @@ fn handle_dataset_query(
             // Parse condition: col > val
             let (col, op, val) = parse_filter_condition(cond_str, line_no)?;
 
-            // Check column exists
-            let col_idx =
-                working_ds
-                    .schema
-                    .get_field_index(&col)
-                    .ok_or_else(|| DslError::Parse {
-                        line: line_no,
-                        msg: format!("Column '{}' not found in dataset", col),
-                    })?;
-
-            working_ds = working_ds.filter(|row| {
-                let row_val = &row.values[col_idx];
-                evaluate_condition(row_val, &op, &val)
-            });
+            current_plan = LogicalPlan::Filter {
+                input: Box::new(current_plan),
+                predicate: Expr::BinaryExpr {
+                    left: Box::new(Expr::Column(col)),
+                    op,
+                    right: Box::new(Expr::Literal(val)),
+                },
+            };
         } else if clauses_trimmed.starts_with("SELECT ") {
             let (cols_str, remaining) = split_clause(clauses_trimmed, "SELECT", &keywords);
             clauses_str = remaining;
 
-            let cols: Vec<&str> = cols_str.split(',').map(|s| s.trim()).collect();
-            working_ds = working_ds.select(&cols).map_err(|e| DslError::Parse {
-                line: line_no,
-                msg: e,
-            })?;
+            let cols: Vec<String> = cols_str.split(',').map(|s| s.trim().to_string()).collect();
+            current_plan = LogicalPlan::Project {
+                input: Box::new(current_plan),
+                columns: cols,
+            };
         } else if clauses_trimmed.starts_with("ORDER BY ") {
             let (order_str, remaining) = split_clause(clauses_trimmed, "ORDER BY", &keywords);
             clauses_str = remaining;
@@ -163,19 +201,18 @@ fn handle_dataset_query(
                     msg: "Empty ORDER BY clause".into(),
                 });
             }
-            let col_name = parts[0];
+            let col_name = parts[0].to_string();
             let ascending = if parts.len() > 1 && parts[1] == "DESC" {
                 false
             } else {
                 true
             };
 
-            working_ds = working_ds
-                .sort_by(col_name, ascending)
-                .map_err(|e| DslError::Parse {
-                    line: line_no,
-                    msg: e,
-                })?;
+            current_plan = LogicalPlan::Sort {
+                input: Box::new(current_plan),
+                column: col_name,
+                ascending,
+            };
         } else if clauses_trimmed.starts_with("LIMIT ") {
             let (limit_str, remaining) = split_clause(clauses_trimmed, "LIMIT", &keywords);
             clauses_str = remaining;
@@ -185,7 +222,10 @@ fn handle_dataset_query(
                 msg: format!("Invalid LIMIT: {}", limit_str),
             })?;
 
-            working_ds = working_ds.take(n);
+            current_plan = LogicalPlan::Limit {
+                input: Box::new(current_plan),
+                n,
+            };
         } else {
             return Err(DslError::Parse {
                 line: line_no,
@@ -194,50 +234,7 @@ fn handle_dataset_query(
         }
     }
 
-    // Save result
-    db.create_dataset(target_name.to_string(), working_ds.schema.clone())
-        .map_err(|e| DslError::Engine {
-            line: line_no,
-            source: e,
-        })?;
-
-    // We created an empty dataset with the schema, now we need to insert the rows.
-    // The `create_dataset` method creates a NEW empty dataset.
-    // `working_ds` has the rows we want, but it's a separate object (with same ID as source initially, then modified).
-    // The `filter`, `select` etc return a NEW dataset object but reusing schema/metadata.
-    // If we want to store it in DB, we should overwrite the dataset in the store or insert it.
-    // `create_dataset` in `db.rs` creates a NEW one and puts it in `dataset_store`.
-    // But `working_ds` IS a `Dataset`. We should insert THIS dataset directly into the store.
-    // However, `TensorDb` only exposes `create_dataset` (which makes a new one).
-    // Checking `TensorDb` implementation... `create_dataset` calls `dataset_store.insert`.
-    // `dataset_store.insert(dataset, name)`.
-    // `working_ds` has the ID of the source. We should probably give it a new ID?
-    // Or `dataset_store` assigns one?
-    // `create_dataset` in `db.rs`: `let id = self.dataset_store.gen_id(); let dataset = Dataset::new(id, schema, ...); self.dataset_store.insert...`.
-
-    // I need a way to insert an existing `Dataset` object into `TensorDb`.
-    // `db.rs` doesn't seem to have `insert_dataset_object`.
-    // I should add it? Or recreate it.
-    // Recreating: `create_dataset` -> empty. Then `insert_row` for every row? Expensive but works with current API.
-    // Better: Add helper to `TensorDb` or modify `create_dataset`.
-    // Or allow `DatasetStore` to take the object.
-
-    // For now, I'll iterate and insert rows. It's safe given I can't modify `engine/db.rs` easily without another tool call and I am in `dsl/handlers/dataset.rs`.
-    // But wait, `working_ds` has `rows` field which is `pub`.
-    // Using `db.get_dataset_mut(target_name)` gives me access to the new empty dataset.
-    // I can just replace its rows!
-
-    let target_ds = db
-        .get_dataset_mut(target_name)
-        .map_err(|e| DslError::Engine {
-            line: line_no,
-            source: e,
-        })?;
-    target_ds.rows = working_ds.rows;
-    // And metadata/stats?
-    target_ds.metadata = working_ds.metadata; // If compatible? stats are updated.
-
-    Ok(DslOutput::None)
+    Ok((target_name, current_plan))
 }
 
 fn split_clause<'a>(s: &'a str, current_kw: &str, all_kws: &[&str]) -> (&'a str, &'a str) {
@@ -285,19 +282,6 @@ fn parse_filter_condition(s: &str, line_no: usize) -> Result<(String, String, Va
         line: line_no,
         msg: format!("Invalid filter condition: {}", s),
     })
-}
-
-fn evaluate_condition(val: &Value, op: &str, target: &Value) -> bool {
-    let ord = val.compare(target);
-    match op {
-        "=" => ord == Some(Ordering::Equal),
-        "!=" => ord.is_some() && ord != Some(Ordering::Equal),
-        ">" => ord == Some(Ordering::Greater),
-        "<" => ord == Some(Ordering::Less),
-        ">=" => ord == Some(Ordering::Greater) || ord == Some(Ordering::Equal),
-        "<=" => ord == Some(Ordering::Less) || ord == Some(Ordering::Equal),
-        _ => false,
-    }
 }
 
 // ... existing code ...

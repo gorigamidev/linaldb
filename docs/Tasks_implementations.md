@@ -120,13 +120,13 @@ This section refines and extends the roadmap starting from Phase 5.5, with the e
 
 > Goal: Move from naive execution to planned execution.
 
-- [ ] Introduce logical query plan
-- [ ] Introduce physical execution plan
-- [ ] Integrate index-aware execution
-- [ ] Implement basic query optimizer:
+- [x] Introduce logical query plan
+- [x] Introduce physical execution plan
+- [x] Integrate index-aware execution
+- [x] Implement basic query optimizer:
   - Index selection
   - Predicate pushdown
-- [ ] Add EXPLAIN / EXPLAIN PLAN DSL command
+- [x] Add EXPLAIN / EXPLAIN PLAN DSL command
 
 ---
 
