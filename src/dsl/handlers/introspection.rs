@@ -53,6 +53,31 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
             "SHAPE {}: {:?}\n",
             name, t.shape.dims
         )))
+    } else if rest.starts_with("SCHEMA ") {
+        let name = rest.trim_start_matches("SCHEMA ").trim();
+        let dataset = db.get_dataset(name).map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
+
+        // Build schema output
+        let mut output = format!("Schema for dataset '{}':\n", name);
+        output.push_str(&format!(
+            "{:<20} {:<10} {:<10}\n",
+            "Field", "Type", "Nullable"
+        ));
+        output.push_str(&format!("{:-<42}\n", ""));
+
+        for field in &dataset.schema.fields {
+            output.push_str(&format!(
+                "{:<20} {:<10} {:<10}\n",
+                field.name,
+                format!("{:?}", field.value_type),
+                field.nullable
+            ));
+        }
+
+        Ok(DslOutput::Message(output))
     } else {
         let name = rest;
         if name.is_empty() {

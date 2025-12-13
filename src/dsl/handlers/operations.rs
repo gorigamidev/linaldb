@@ -275,6 +275,22 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
                     source: e,
                 })
         }
+        "STACK" => {
+            // LET x = STACK a b c ...
+            if tokens.len() < 3 {
+                return Err(DslError::Parse {
+                    line: line_no,
+                    msg: "Expected: LET x = STACK t1 t2 ...".into(),
+                });
+            }
+            // tokens[0] is STACK
+            let input_names: Vec<&str> = tokens[1..].to_vec();
+            db.eval_stack(output_name, input_names, 0) // Axis 0 fixed for now
+                .map_err(|e| DslError::Engine {
+                    line: line_no,
+                    source: e,
+                })
+        }
         other => Err(DslError::Parse {
             line: line_no,
             msg: format!("Unknown LET operation: {}", other),

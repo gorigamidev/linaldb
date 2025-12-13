@@ -1,6 +1,7 @@
 # VectorDB
 
-**VectorDB** is an experimental, in-memory tensor database and DSL engine written in Rust. It combines high-performance tensor operations with structured dataset management and a SQL-like query language.
+**VectorDB** is an experimental in-memory analytical engine for scientific computing, machine learning, and data analysis.
+It provides first-class support for vectors, matrices, and tensors, combined with structured datasets and a SQL-inspired DSL designed for expressive, readable computation.
 
 ## 🚀 Features
 
@@ -9,6 +10,21 @@
 -   **Server Mode**: Built-in HTTP server returning **TOON (Token-Oriented Object Notation)** responses.
 -   **TOON Integration**: optimized output format for LLM consumption.
 -   **REPL & CLI**: Interactive shell and script execution.
+
+## 🔧 What VectorDB is (and is not)
+
+### What VectorDB Is
+
+- An embedded analytical engine
+- A DSL for scientific and ML-oriented data analysis
+- Optimized for in-memory computation
+- Designed for scripting, REPL usage, and service integration
+
+### What VectorDB Is Not (Yet)
+
+- A distributed database
+- A transactional OLTP system
+- A replacement for NumPy or Postgres
 
 ## 📦 Installation
 

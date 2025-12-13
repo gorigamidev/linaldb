@@ -248,6 +248,42 @@ impl TensorDb {
         Ok(())
     }
 
+    /// Stack tensors: C = STACK A B
+    pub fn eval_stack(
+        &mut self,
+        output_name: impl Into<String>,
+        input_names: Vec<&str>,
+        axis: usize,
+    ) -> Result<(), EngineError> {
+        // Collect tensors
+        let mut tensors = Vec::with_capacity(input_names.len());
+        let mut kind = TensorKind::Normal;
+
+        // We need to fetch all first.
+        // references issue: we can't hold refs while mutating self?
+        // self.get_with_kind borrows self immutable.
+        // We clone them immediately.
+
+        for name in input_names {
+            let (t, k) = self.get_with_kind(name)?;
+            if matches!(k, TensorKind::Strict) {
+                kind = TensorKind::Strict;
+            }
+            tensors.push(t.clone()); // Cloning data. Optimization: use Arc<Tensor> later.
+        }
+
+        let tensor_refs: Vec<&Tensor> = tensors.iter().collect();
+        let new_id = self.store.gen_id_internal();
+
+        let result =
+            super::kernels::stack(&tensor_refs, axis, new_id).map_err(EngineError::InvalidOp)?;
+
+        let out_id = self.store.insert_existing_tensor(result)?;
+        self.names
+            .insert(output_name.into(), NameEntry { id: out_id, kind });
+        Ok(())
+    }
+
     // ===== Dataset Management Methods =====
 
     /// Create a new dataset with schema
@@ -288,5 +324,20 @@ impl TensorDb {
     /// List all dataset names
     pub fn list_dataset_names(&self) -> Vec<String> {
         self.dataset_store.list_names()
+    }
+
+    /// Add a column to an existing dataset
+    pub fn alter_dataset_add_column(
+        &mut self,
+        dataset_name: &str,
+        column_name: String,
+        value_type: crate::core::value::ValueType,
+        default_value: crate::core::value::Value,
+        nullable: bool,
+    ) -> Result<(), EngineError> {
+        let dataset = self.get_dataset_mut(dataset_name)?;
+        dataset
+            .add_column(column_name, value_type, default_value, nullable)
+            .map_err(|e| EngineError::InvalidOp(e))
     }
 }

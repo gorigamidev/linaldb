@@ -299,6 +299,54 @@ impl Dataset {
             .update_stats(&self.schema, &new_dataset.rows);
         new_dataset
     }
+
+    /// Add a new column to the dataset with a default value
+    /// This creates a new schema and updates all existing rows
+    pub fn add_column(
+        &mut self,
+        column_name: String,
+        value_type: ValueType,
+        default_value: Value,
+        nullable: bool,
+    ) -> Result<(), String> {
+        // Validate that column doesn't already exist
+        if self.schema.get_field(column_name.as_str()).is_some() {
+            return Err(format!("Column '{}' already exists", column_name));
+        }
+
+        // Validate that default value matches the type
+        if !default_value.is_null() && !default_value.matches_type(&value_type) {
+            return Err(format!(
+                "Default value type mismatch: expected {:?}, got {:?}",
+                value_type,
+                default_value.value_type()
+            ));
+        }
+
+        // Create new schema with the additional field
+        let mut new_fields = self.schema.fields.clone();
+        new_fields.push(super::tuple::Field {
+            name: column_name.clone(),
+            value_type,
+            nullable,
+        });
+        let new_schema = Arc::new(Schema::new(new_fields));
+
+        // Update all existing rows to include the new column
+        let mut new_rows = Vec::with_capacity(self.rows.len());
+        for row in &self.rows {
+            let mut new_values = row.values.clone();
+            new_values.push(default_value.clone());
+            new_rows.push(Tuple::new(new_schema.clone(), new_values)?);
+        }
+
+        // Update dataset
+        self.schema = new_schema;
+        self.rows = new_rows;
+        self.metadata.update_stats(&self.schema, &self.rows);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

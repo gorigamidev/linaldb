@@ -18,10 +18,12 @@ pub fn handle_dataset(
         handle_dataset_creation(db, line, line_no)
     } else if line.contains(" FROM ") {
         handle_dataset_query(db, line, line_no)
+    } else if line.contains(" ADD COLUMN ") {
+        handle_add_column(db, line, line_no)
     } else {
         Err(DslError::Parse {
             line: line_no,
-            msg: "Expected DATASET ... COLUMNS ... or DATASET ... FROM ...".into(),
+            msg: "Expected DATASET ... COLUMNS ... or DATASET ... FROM ... or DATASET ... ADD COLUMN ...".into(),
         })
     }
 }
@@ -497,4 +499,88 @@ fn parse_single_value(s: &str, line_no: usize) -> Result<Value, DslError> {
             line: line_no,
             msg: format!("Invalid value: {}", s),
         })
+}
+
+/// Handle DATASET <name> ADD COLUMN <col>: <type> [DEFAULT <val>]
+fn handle_add_column(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    let rest = line.trim_start_matches("DATASET").trim();
+
+    // Split into dataset name and ADD COLUMN part
+    let parts: Vec<&str> = rest.splitn(2, " ADD COLUMN ").collect();
+    if parts.len() != 2 {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected: DATASET <name> ADD COLUMN <col>: <type> [DEFAULT <val>]".into(),
+        });
+    }
+
+    let dataset_name = parts[0].trim();
+    let column_spec = parts[1].trim();
+
+    // Parse column specification: <col>: <type> [DEFAULT <val>]
+    // Split by DEFAULT first
+    let (col_type_part, default_val) = if let Some(idx) = column_spec.find(" DEFAULT ") {
+        let col_type = &column_spec[..idx];
+        let default_str = &column_spec[idx + 9..].trim();
+        (col_type, Some(parse_single_value(default_str, line_no)?))
+    } else {
+        (column_spec, None)
+    };
+
+    // Parse <col>: <type>
+    let col_parts: Vec<&str> = col_type_part.splitn(2, ':').collect();
+    if col_parts.len() != 2 {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected column definition: <name>: <type>".into(),
+        });
+    }
+
+    let column_name = col_parts[0].trim().to_string();
+    let type_str = col_parts[1].trim();
+
+    // Check if nullable (ends with ?)
+    let (type_str_clean, nullable) = if type_str.ends_with('?') {
+        (&type_str[..type_str.len() - 1], true)
+    } else {
+        (type_str, false)
+    };
+
+    // Parse type
+    let value_type = parse_value_type(type_str_clean, line_no)?;
+
+    // Determine default value
+    let default_value = default_val.unwrap_or_else(|| {
+        if nullable {
+            Value::Null
+        } else {
+            // Use type-appropriate default
+            match value_type {
+                ValueType::Int => Value::Int(0),
+                ValueType::Float => Value::Float(0.0),
+                ValueType::String => Value::String(String::new()),
+                ValueType::Bool => Value::Bool(false),
+                ValueType::Vector(dim) => Value::Vector(vec![0.0; dim]),
+                ValueType::Null => Value::Null,
+            }
+        }
+    });
+
+    // Execute the alteration
+    db.alter_dataset_add_column(
+        dataset_name,
+        column_name.clone(),
+        value_type,
+        default_value,
+        nullable,
+    )
+    .map_err(|e| DslError::Engine {
+        line: line_no,
+        source: e,
+    })?;
+
+    Ok(DslOutput::Message(format!(
+        "Added column '{}' to dataset '{}'",
+        column_name, dataset_name
+    )))
 }

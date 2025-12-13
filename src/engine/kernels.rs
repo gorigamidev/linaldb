@@ -435,10 +435,47 @@ pub fn index(a: &Tensor, indices: &[usize]) -> Result<f32, String> {
     Ok(a.data[flat_idx])
 }
 
+/// Stack a list of tensors along a new axis (0 for now)
+/// All tensors must have the same shape.
+/// Result rank = Input rank + 1
+pub fn stack(tensors: &[&Tensor], axis: usize, new_id: TensorId) -> Result<Tensor, String> {
+    if tensors.is_empty() {
+        return Err("Cannot stack empty list of tensors".into());
+    }
+
+    let first_shape = &tensors[0].shape;
+    for (i, t) in tensors.iter().enumerate().skip(1) {
+        if t.shape.dims != first_shape.dims {
+            return Err(format!(
+                "Tensor at index {} has different shape {:?} compared to first tensor {:?}",
+                i, t.shape.dims, first_shape.dims
+            ));
+        }
+    }
+
+    // New shape: insert 'tensors.len()' at 'axis' position
+    // For MVP, simplified: only axis 0 (stacking rows)
+    if axis != 0 {
+        return Err("Stack only supported on axis 0 for now".into());
+    }
+
+    let mut new_dims = vec![tensors.len()];
+    new_dims.extend_from_slice(&first_shape.dims);
+
+    let mut new_data = Vec::with_capacity(new_dims.iter().product());
+
+    for t in tensors {
+        new_data.extend_from_slice(&t.data);
+    }
+
+    let new_shape = Shape::new(new_dims);
+    Tensor::new(new_id, new_shape, new_data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tensor::{Shape, Tensor, TensorId};
+    use crate::core::tensor::{Shape, Tensor, TensorId};
 
     fn tensor_1d(id: u64, vals: Vec<f32>) -> Tensor {
         let shape = Shape::new(vec![vals.len()]);
@@ -484,5 +521,16 @@ mod tests {
         let n = normalize_1d(&b, TensorId(3)).unwrap();
         let norm_n = l2_norm_1d(&n).unwrap();
         assert!((norm_n - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_stack() {
+        let a = tensor_1d(1, vec![1.0, 2.0]);
+        let b = tensor_1d(2, vec![3.0, 4.0]);
+
+        // Stack [2] and [2] -> [2, 2] matrix
+        let stacked = stack(&[&a, &b], 0, TensorId(3)).unwrap();
+        assert_eq!(stacked.shape.dims, vec![2, 2]);
+        assert_eq!(stacked.data, vec![1.0, 2.0, 3.0, 4.0]);
     }
 }

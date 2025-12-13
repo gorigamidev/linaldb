@@ -103,6 +103,19 @@ impl Value {
             _ => None,
         }
     }
+
+    /// Check if this value matches the given type
+    pub fn matches_type(&self, value_type: &ValueType) -> bool {
+        match (self, value_type) {
+            (Value::Float(_), ValueType::Float) => true,
+            (Value::Int(_), ValueType::Int) => true,
+            (Value::String(_), ValueType::String) => true,
+            (Value::Bool(_), ValueType::Bool) => true,
+            (Value::Vector(v), ValueType::Vector(dim)) => v.len() == *dim,
+            (Value::Null, _) => true, // Null matches any type if nullable
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for Value {
