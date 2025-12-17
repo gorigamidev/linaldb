@@ -27,10 +27,17 @@ SELECT region, features FROM analytics LIMIT 5
 
 -- Filter using standard predicates
 SELECT * FROM analytics WHERE region = "North"
+
+-- Add computed columns dynamically
+DATASET analytics ADD COLUMN total = price * quantity
+DATASET analytics ADD COLUMN discount_price = price - discount
+
+-- Schema introspection
+SHOW SCHEMA analytics
 ```
 
 ### 3. Matrix & Vector Aggregations
-VectorDB supports element-wise aggregations on complex types.
+VectorDB supports element-wise aggregations on complex types with full SQL-like aggregation functions.
 
 ```sql
 -- Element-wise Summation of Matrices by Region
@@ -38,9 +45,24 @@ SELECT region, SUM(features)
 FROM analytics 
 GROUP BY region
 
+-- Average (AVG) aggregation with proper sum/count tracking
+SELECT region, AVG(score) 
+FROM analytics 
+GROUP BY region
+
 -- Aggregation on Computed Expressions
 -- Scales the matrix by 2 before summing
 SELECT region, SUM(features * 2.0) 
+FROM analytics 
+GROUP BY region
+
+-- Full aggregation suite: SUM, AVG, COUNT, MIN, MAX
+SELECT region, 
+       SUM(amount) as total,
+       AVG(amount) as average,
+       COUNT(*) as count,
+       MIN(amount) as minimum,
+       MAX(amount) as maximum
 FROM analytics 
 GROUP BY region
 ```
@@ -62,6 +84,36 @@ LIMIT 5
 *   **REPL**: Interactive shell for exploration (`cargo run`).
 *   **Scripting**: Run `.vdb` files (`cargo run -- run script.vdb`).
 *   **HTTP Server**: JSON-based API returning **TOON** (Token-Oriented Object Notation) for efficient LLM integration.
+
+---
+
+## ✨ Recent Features
+
+### AVG Aggregation (v0.1.2)
+Full implementation of AVG aggregation with proper sum/count tracking:
+- Supports Int, Float, Vector, and Matrix types
+- Automatic type conversion (Int → Float for precision)
+- Works with GROUP BY and computed expressions
+
+### Computed Columns (v0.1.2)
+Add computed columns dynamically using expressions:
+```sql
+-- Add computed column with expression
+DATASET products ADD COLUMN total = price * quantity
+DATASET sales ADD COLUMN profit = revenue - cost
+```
+
+### Schema Introspection
+```sql
+-- View dataset schema
+SHOW SCHEMA analytics
+
+-- List all datasets
+SHOW ALL DATASETS
+
+-- View all indexes
+SHOW INDEXES analytics
+```
 
 ---
 
@@ -94,8 +146,10 @@ $ cargo run
 ## 🏗 Architecture
 
 *   **Storage Engine**: In-memory columnar/row hybrid store with specialized indices (HashIndex, VectorIndex).
-*   **Query Engine**: Logical -> Physical plan optimization with predicate pushdown.
+*   **Query Engine**: Logical -> Physical plan optimization with predicate pushdown and index-aware execution.
 *   **Type System**: Strong typing with inference for arithmetic expressions (`Matrix + Float = Matrix`).
+*   **Aggregation Engine**: Full SQL aggregation support (SUM, AVG, COUNT, MIN, MAX) with element-wise operations on vectors and matrices.
+*   **Schema Evolution**: Dynamic column addition with computed columns support (`ADD COLUMN x = expression`).
 
 ## � Documentation
 
