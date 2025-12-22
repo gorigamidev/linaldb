@@ -4,7 +4,7 @@
 
 ---
 
-## 🌟 Key Capabilities
+## Key Capabilities
 
 ### 1. Hybrid Data Model
 Store structured data (Integers, Strings) alongside mathematical types (Vectors, Matrices) in the same dataset.
@@ -87,7 +87,7 @@ LIMIT 5
 
 ---
 
-## ✨ Recent Features
+## Recent Features
 
 ### AVG Aggregation (v0.1.2)
 Full implementation of AVG aggregation with proper sum/count tracking:
@@ -165,7 +165,7 @@ $ cargo run
 
 ---
 
-## 🏗 Architecture
+## Architecture
 
 *   **Storage Engine**: In-memory columnar/row hybrid store with specialized indices (HashIndex, VectorIndex).
 *   **Query Engine**: Logical -> Physical plan optimization with predicate pushdown and index-aware execution.
@@ -173,7 +173,7 @@ $ cargo run
 *   **Aggregation Engine**: Full SQL aggregation support (SUM, AVG, COUNT, MIN, MAX) with element-wise operations on vectors and matrices.
 *   **Schema Evolution**: Dynamic column addition with computed columns support (`ADD COLUMN x = expression`).
 
-## � Documentation
+## Documentation
 
 *   [DSL Reference](docs/DSL_REFERENCE.md)
 *   [Roadmap & Status](docs/ROADMAP.md)

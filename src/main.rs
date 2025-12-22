@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut buffer = String::new();
 
             loop {
-                print!("vdb>>> ");
+                print!(">_>  ");
                 io::stdout().flush()?;
                 buffer.clear();
                 if handle.read_line(&mut buffer)? == 0 {
