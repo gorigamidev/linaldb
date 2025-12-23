@@ -190,16 +190,22 @@ This section refines and extends the roadmap starting from Phase 5.5, with the e
 
 > Goal: Make the engine restartable, durable, and production-viable.
 
-- [ ] Define persistence abstraction (StorageEngine trait)
-- [ ] Implement Parquet-based storage
-- [ ] Serialize:
-  - DatasetStore
-  - TensorStore
-  - Schema metadata
-  - Index metadata
-- [ ] Implement LOAD / SAVE DSL commands
-- [ ] Support partial loading (lazy datasets)
-- [ ] Add full persistence test suite
+- [x] Define persistence abstraction (StorageEngine trait)
+- [x] Implement Parquet-based storage
+- [x] Serialize:
+  - [x] DatasetStore (Parquet + JSON metadata)
+  - [x] TensorStore (JSON format)
+  - [x] Schema metadata
+- [x] Implement SAVE DSL commands
+  - [x] SAVE DATASET
+  - [ ] SAVE TENSOR (Pending TensorDb integration)
+- [ ] Implement LOAD DSL commands
+  - [ ] LOAD DATASET (Needs Parquet -> Dataset conversion)
+  - [ ] LOAD TENSOR (Pending TensorDb integration)
+- [x] Implement LIST commands
+  - [x] LIST DATASETS
+  - [x] LIST TENSORS
+- [x] Add full persistence test suite
 
 ---
 

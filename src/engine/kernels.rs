@@ -53,6 +53,15 @@ fn elementwise_binary_op(
             let shape = Shape::new(vec![len]);
             Tensor::new(new_id, shape, data)
         }
+        // Si los shapes son idénticos (ej: Matrix + Matrix), operar elemento a elemento
+        _ if a.shape == b.shape => {
+            let len = a.len();
+            let mut data = Vec::with_capacity(len);
+            for i in 0..len {
+                data.push(op(a.data[i], b.data[i])?);
+            }
+            Tensor::new(new_id, a.shape.clone(), data)
+        }
         // Otros casos: de momento, error
         _ => Err(format!(
             "Unsupported shapes for element-wise op: {:?} vs {:?}",

@@ -1,0 +1,5 @@
+MATRIX A = [[1.0, 2.0], [3.0, 4.0]]
+MATRIX B = [[5.0, 6.0], [7.0, 8.0]]
+
+LET C = ADD A B
+SHOW C
