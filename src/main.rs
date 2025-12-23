@@ -10,7 +10,7 @@ use vector_db_rs::server::start_server;
 #[derive(Parser)]
 #[command(name = "VectorDB")]
 #[command(version = "0.1")]
-#[command(about = "A toy vector database", long_about = None)]
+#[command(about = "A vector database", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
