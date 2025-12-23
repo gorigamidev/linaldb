@@ -81,13 +81,80 @@ LIMIT 5
 ```
 
 ### 5. Multi-Paradigm Access
-*   **REPL**: Interactive shell for exploration (`cargo run`).
-*   **Scripting**: Run `.vdb` files (`cargo run -- run script.vdb`).
-*   **HTTP Server**: JSON-based API returning **TOON** (Token-Oriented Object Notation) for efficient LLM integration.
+
+**REPL (Interactive Shell)**
+```bash
+# Default: Human-readable output
+cargo run -- repl
+
+# TOON format for scripting/automation
+cargo run -- repl --format=toon
+```
+
+**Script Execution**
+```bash
+# Run .vdb script files
+cargo run -- run examples/features_demo.vdb
+
+# With TOON output
+cargo run -- run script.vdb --format=toon
+```
+
+**HTTP Server**
+```bash
+# Start server on port 8080
+cargo run -- server --port 8080
+```
+
+**Server API** - Unified interface with DSL commands and flexible output:
+
+*Input:* Raw DSL commands (text/plain)
+```bash
+# TOON response (default)
+curl -X POST "http://localhost:8080/execute" \
+  -H "Content-Type: text/plain" \
+  -d "VECTOR v = [1, 2, 3]"
+
+# JSON response (opt-in)
+curl -X POST "http://localhost:8080/execute?format=json" \
+  -H "Content-Type: text/plain" \
+  -d "SHOW v"
+```
+
+*Response Formats:*
+- **TOON** (default): Token-Oriented Object Notation - human and machine readable
+- **JSON** (opt-in): Standard JSON format via `?format=json` query parameter
+
+*Legacy Support:* JSON request wrapper still supported with deprecation warnings
 
 ---
 
 ## Recent Features
+
+### Interface Standardization (v0.1.2)
+Unified interface across all access methods with flexible output formats:
+
+**Server API Improvements:**
+- Raw DSL commands as input (no JSON wrapper needed)
+- TOON format as default output
+- JSON format available via `?format=json` query parameter
+- Backward compatible with legacy JSON request format
+
+**CLI Enhancements:**
+- `--format` flag for REPL and script execution
+- Choose between `display` (human-readable) or `toon` (machine-readable) output
+- Perfect for automation and scripting workflows
+
+**Example:**
+```bash
+# CLI with TOON output
+cargo run -- repl --format=toon
+
+# Server with JSON response
+curl -X POST "http://localhost:8080/execute?format=json" \
+  -H "Content-Type: text/plain" \
+  -d "SELECT * FROM users LIMIT 5"
+```
 
 ### AVG Aggregation (v0.1.2)
 Full implementation of AVG aggregation with proper sum/count tracking:

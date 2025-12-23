@@ -19,13 +19,12 @@ async fn test_toon_server_output() {
     // Wait for server to be ready
     sleep(Duration::from_millis(1000)).await;
 
-    // 2. Perform Request
+    // 2. Perform Request with raw DSL (new format)
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("http://localhost:{}/execute", port))
-        .json(&serde_json::json!({
-            "command": "VECTOR v = [1, 2, 3]"
-        }))
+        .header("Content-Type", "text/plain")
+        .body("VECTOR v = [1, 2, 3]")
         .send()
         .await
         .expect("Failed to send request");
@@ -103,4 +102,162 @@ async fn test_toon_dsl_output() {
     assert!(body.contains("dims[2]: 2,2")); // Check if TOON format is roughly as expected
                                             // Note: TOON format for arrays/dims might vary slightly based on toon-format crate version
                                             // but typically it's clean. Adjust assertion if failed.
+}
+
+#[tokio::test]
+async fn test_json_backward_compatibility() {
+    // Test that JSON format still works (with deprecation warning)
+    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let port = 8097;
+    let db_clone = db.clone();
+
+    tokio::spawn(async move {
+        start_server(db_clone, port).await;
+    });
+
+    sleep(Duration::from_millis(1000)).await;
+
+    // Send request with JSON format (legacy)
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://localhost:{}/execute", port))
+        .json(&serde_json::json!({
+            "command": "VECTOR v = [1, 2, 3]"
+        }))
+        .send()
+        .await
+        .expect("Failed to send request");
+
+    // Should still work
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.expect("Failed to get body");
+    println!("JSON Backward Compat Response:\n{}", body);
+    
+    assert!(body.contains("status: ok"));
+    assert!(body.contains("Message: \"Defined vector: v\""));
+}
+
+#[tokio::test]
+async fn test_json_format_response() {
+    // Test JSON format via query parameter
+    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let port = 8098;
+    let db_clone = db.clone();
+
+    tokio::spawn(async move {
+        start_server(db_clone, port).await;
+    });
+
+    sleep(Duration::from_millis(1000)).await;
+
+    // Request JSON format
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://localhost:{}/execute?format=json", port))
+        .header("Content-Type", "text/plain")
+        .body("VECTOR v = [1, 2, 3]")
+        .send()
+        .await
+        .expect("Failed to send request");
+
+    // Verify JSON response
+    assert_eq!(resp.status(), 200);
+    assert!(
+        resp.headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("application/json"),
+        "Content-Type should be application/json"
+    );
+
+    let body = resp.text().await.expect("Failed to get body");
+    println!("JSON Format Response:\n{}", body);
+
+    // Parse as JSON
+    let json: serde_json::Value = serde_json::from_str(&body).expect("Should be valid JSON");
+    assert_eq!(json["status"], "ok");
+    assert!(json["result"].is_object());
+}
+
+#[tokio::test]
+async fn test_toon_format_explicit() {
+    // Test explicit TOON format via query parameter
+    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let port = 8099;
+    let db_clone = db.clone();
+
+    tokio::spawn(async move {
+        start_server(db_clone, port).await;
+    });
+
+    sleep(Duration::from_millis(1000)).await;
+
+    // Request TOON format explicitly
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://localhost:{}/execute?format=toon", port))
+        .header("Content-Type", "text/plain")
+        .body("VECTOR v = [1, 2, 3]")
+        .send()
+        .await
+        .expect("Failed to send request");
+
+    // Verify TOON response
+    assert_eq!(resp.status(), 200);
+    assert!(
+        resp.headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("text/toon"),
+        "Content-Type should be text/toon"
+    );
+
+    let body = resp.text().await.expect("Failed to get body");
+    println!("TOON Format Response:\n{}", body);
+
+    assert!(body.contains("status: ok"));
+    assert!(body.contains("Message: \"Defined vector: v\""));
+}
+
+#[tokio::test]
+async fn test_invalid_format_defaults_to_toon() {
+    // Test that invalid format defaults to TOON
+    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let port = 8100;
+    let db_clone = db.clone();
+
+    tokio::spawn(async move {
+        start_server(db_clone, port).await;
+    });
+
+    sleep(Duration::from_millis(1000)).await;
+
+    // Request with invalid format
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://localhost:{}/execute?format=xml", port))
+        .header("Content-Type", "text/plain")
+        .body("VECTOR v = [1, 2, 3]")
+        .send()
+        .await
+        .expect("Failed to send request");
+
+    // Should default to TOON
+    assert_eq!(resp.status(), 200);
+    assert!(
+        resp.headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("text/toon"),
+        "Content-Type should default to text/toon"
+    );
+
+    let body = resp.text().await.expect("Failed to get body");
+    assert!(body.contains("status: ok"));
 }

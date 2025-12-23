@@ -153,6 +153,39 @@ This section refines and extends the roadmap starting from Phase 5.5, with the e
 
 ---
 
+## Phase 8.5: Interface Standardization (TOON + DSL) ✅
+
+> Goal: Standardize all interfaces to use DSL commands as input and TOON as output format.
+
+- [x] Server API refactor
+  - Accept raw DSL text via `text/plain` content type
+  - Maintain JSON backward compatibility with deprecation warnings
+  - Always return TOON format
+- [x] CLI enhancement
+  - Add `--format` flag to REPL and Run commands
+  - Support `display` (default) and `toon` output formats
+  - Implement TOON serialization in CLI
+- [x] Test updates
+  - Update server tests to use raw DSL
+  - Add backward compatibility test for JSON
+  - Verify all 113 tests passing
+- [x] Documentation
+  - Create walkthrough document
+  - Document migration path from JSON to raw DSL
+
+### Future Enhancement: Response Format Selection ✅
+
+- [x] Add response format parameter to server API
+  - Support `?format=toon` (default) and `?format=json` query parameters
+  - Allow clients to request JSON response format if needed
+  - Implement JSON serialization for `DslOutput`
+- [x] Update server endpoint signature
+  - Parse query parameters for format selection
+  - Serialize response based on requested format
+  - Maintain TOON as default for consistency
+
+---
+
 ## Phase 9: Persistence Layer (Disk-backed Engine)
 
 > Goal: Make the engine restartable, durable, and production-viable.

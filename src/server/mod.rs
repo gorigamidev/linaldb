@@ -1,7 +1,7 @@
 use crate::dsl::{execute_line, DslOutput};
 use crate::engine::TensorDb;
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -13,6 +13,16 @@ use toon_format::encode_default;
 
 struct AppState {
     db: Arc<Mutex<TensorDb>>,
+}
+
+#[derive(Deserialize)]
+struct ExecuteParams {
+    #[serde(default = "default_format")]
+    format: String,
+}
+
+fn default_format() -> String {
+    "toon".to_string()
 }
 
 #[derive(Deserialize)]
@@ -49,12 +59,37 @@ async fn health_check() -> (StatusCode, Json<serde_json::Value>) {
 
 async fn execute_command(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<ExecuteRequest>,
+    Query(params): Query<ExecuteParams>,
+    headers: axum::http::HeaderMap,
+    body: String,
 ) -> impl IntoResponse {
+    // Determine if request is JSON (legacy) or plain text (preferred)
+    let content_type = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("text/plain");
+
+    let command = if content_type.contains("application/json") {
+        // Legacy JSON format: {"command": "..."}
+        // Log deprecation warning
+        eprintln!("[DEPRECATED] JSON request format is deprecated. Use Content-Type: text/plain with raw DSL command instead.");
+        
+        match serde_json::from_str::<ExecuteRequest>(&body) {
+            Ok(req) => req.command,
+            Err(_) => {
+                // If JSON parsing fails, treat as raw DSL
+                body.trim().to_string()
+            }
+        }
+    } else {
+        // Preferred: raw DSL text
+        body.trim().to_string()
+    };
+
     // We lock the DB for the duration of execution.
     // In a real DB we'd want finer grained locking or MVCC.
     let mut db = state.db.lock().unwrap();
-    let response = match execute_line(&mut db, &payload.command, 1) {
+    let response = match execute_line(&mut db, &command, 1) {
         Ok(output) => {
             // If output is Message, effectively it's the result.
             // If output is None, result is None.
@@ -76,12 +111,27 @@ async fn execute_command(
         },
     };
 
-    let body = encode_default(&response)
-        .unwrap_or_else(|e| format!("status: error\nerror: Serialization failed: {}", e));
-
-    (
-        StatusCode::OK,
-        [(axum::http::header::CONTENT_TYPE, "text/toon")],
-        body,
-    )
+    // Serialize based on requested format
+    match params.format.as_str() {
+        "json" => {
+            // JSON format (opt-in)
+            let body = serde_json::to_string(&response)
+                .unwrap_or_else(|e| format!("{{\"status\": \"error\", \"error\": \"Serialization failed: {}\"}}", e));
+            (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                body,
+            )
+        }
+        _ => {
+            // TOON format (default)
+            let body = encode_default(&response)
+                .unwrap_or_else(|e| format!("status: error\nerror: Serialization failed: {}", e));
+            (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "text/toon")],
+                body,
+            )
+        }
+    }
 }
