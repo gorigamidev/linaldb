@@ -1,0 +1,50 @@
+{
+  "name": "users",
+  "created_at": {
+    "secs_since_epoch": 1766597908,
+    "nanos_since_epoch": 681070000
+  },
+  "row_count": 1,
+  "column_stats": {
+    "email": {
+      "value_type": "String",
+      "null_count": 0,
+      "min": {
+        "String": "admin@linal.ai"
+      },
+      "max": {
+        "String": "admin@linal.ai"
+      }
+    },
+    "id": {
+      "value_type": "Int",
+      "null_count": 0,
+      "min": {
+        "Int": 1
+      },
+      "max": {
+        "Int": 1
+      }
+    }
+  },
+  "schema": {
+    "fields": [
+      {
+        "name": "id",
+        "value_type": "Int",
+        "nullable": false,
+        "is_lazy": false
+      },
+      {
+        "name": "email",
+        "value_type": "String",
+        "nullable": false,
+        "is_lazy": false
+      }
+    ],
+    "field_indices": {
+      "email": 1,
+      "id": 0
+    }
+  }
+}

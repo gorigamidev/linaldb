@@ -1,0 +1,3 @@
+[storage]
+data_dir = "./data"
+default_db = "default"

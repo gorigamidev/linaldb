@@ -127,18 +127,26 @@ pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Dsl
     } else if line.starts_with("MATERIALIZE ") {
         handlers::dataset::handle_materialize(db, line, line_no)
     } else if line.starts_with("CREATE ") {
-        // Check for CREATE INDEX or CREATE VECTOR INDEX
-        if line.contains("INDEX ") {
+        // Check for CREATE DATABASE
+        if line.starts_with("CREATE DATABASE ") {
+            handlers::instance::handle_create_database(db, line, line_no)
+        } else if line.contains("INDEX ") {
             handlers::index::handle_create_index(db, line, line_no)
         } else {
-            // Fallback or Error?
-            // Existing code used `handlers::ddl::handle_create`.
-            // But we don't have DDL handler. Maybe it's `operations.rs` or unimplemented.
-            // Checking `operations.rs` content might be useful, or just return error.
-            // For now return error to be safe.
             Err(DslError::Parse {
                 line: line_no,
                 msg: format!("Unsupported CREATE command: {}", line),
+            })
+        }
+    } else if line.starts_with("USE ") {
+        handlers::instance::handle_use_database(db, line, line_no)
+    } else if line.starts_with("DROP ") {
+        if line.starts_with("DROP DATABASE ") {
+            handlers::instance::handle_drop_database(db, line, line_no)
+        } else {
+            Err(DslError::Parse {
+                line: line_no,
+                msg: format!("Unsupported DROP command: {}", line),
             })
         }
     } else if line.starts_with("SAVE ") {

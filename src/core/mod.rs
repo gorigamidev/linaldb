@@ -1,3 +1,4 @@
+pub mod config;
 pub mod dataset;
 pub mod index;
 pub mod storage;

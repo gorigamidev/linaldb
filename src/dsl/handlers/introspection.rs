@@ -43,11 +43,20 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
         }
         output.push_str("--------------------");
         Ok(DslOutput::Message(output))
+    } else if rest == "DATABASES" || rest == "ALL DATABASES" {
+        let mut names = db.list_databases();
+        names.sort();
+        let mut output = String::from("--- ALL DATABASES ---\n");
+        for name in names {
+            output.push_str(&format!("  - {}\n", name));
+        }
+        output.push_str("---------------------");
+        Ok(DslOutput::Message(output))
     } else if rest.starts_with("INDEXES") {
         let dataset_filter = if rest == "INDEXES" || rest == "ALL INDEXES" {
             None
         } else {
-             Some(rest.trim_start_matches("INDEXES ").trim())
+            Some(rest.trim_start_matches("INDEXES ").trim())
         };
 
         let indices = db.list_indices();
@@ -56,33 +65,37 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
         } else {
             String::from("--- ALL INDICES ---\n")
         };
-        
+
         output.push_str(&format!(
             "{:<20} {:<20} {:<10}\n",
             "Dataset", "Column", "Type"
         ));
         output.push_str(&format!("{:-<52}\n", ""));
-        
+
         let mut count = 0;
         for (ds, col, type_str) in indices {
             if let Some(target) = dataset_filter {
-                if ds != target { continue; }
+                if ds != target {
+                    continue;
+                }
             }
             output.push_str(&format!("{:<20} {:<20} {:<10}\n", ds, col, type_str));
             count += 1;
         }
         output.push_str("-------------------");
-        
+
         if count == 0 && dataset_filter.is_some() {
-             // Check if dataset exists to give better error message?
-             if db.get_dataset(dataset_filter.unwrap()).is_err() {
-                 return Err(DslError::Engine {
-                     line: line_no,
-                     source: crate::engine::EngineError::NameNotFound(dataset_filter.unwrap().to_string())
-                 });
-             }
+            // Check if dataset exists to give better error message?
+            if db.get_dataset(dataset_filter.unwrap()).is_err() {
+                return Err(DslError::Engine {
+                    line: line_no,
+                    source: crate::engine::EngineError::NameNotFound(
+                        dataset_filter.unwrap().to_string(),
+                    ),
+                });
+            }
         }
-        
+
         Ok(DslOutput::Message(output))
     } else if rest.starts_with("SHAPE ") {
         let name = rest.trim_start_matches("SHAPE ").trim();

@@ -36,8 +36,8 @@
 - [x] Restructure src/ into modular components (core, engine, dsl, utils)
 - [x] Create core module (tensor, value, tuple, dataset, store)
 - [x] Create engine module (db, operations, error)
-- [x] Create dsl module (parser, error, handlers) 
-- [x] Create utils module (parsing) 
+- [x] Create dsl module (parser, error, handlers)
+- [x] Create utils module (parsing)
 - [x] Clean up lib.rs exports (unified API)
 - [x] Ensure all tests pass (Unit + Integration)
 
@@ -67,6 +67,7 @@
 - [x] Update README.md with TOON and Server details
 
 ---------------
+
 # VectorDB / Tensor Engine – Extended Roadmap (Post-Phase 5.5)
 
 This section refines and extends the roadmap starting from Phase 5.5, with the explicit goal of reaching a **public, usable engine** that can operate as:
@@ -186,7 +187,7 @@ This section refines and extends the roadmap starting from Phase 5.5, with the e
 
 ---
 
-## Phase 9: Persistence Layer (Disk-backed Engine)
+## Phase 9: Persistence Layer (Disk-backed Engine) ✅
 
 > Goal: Make the engine restartable, durable, and production-viable.
 
@@ -198,10 +199,10 @@ This section refines and extends the roadmap starting from Phase 5.5, with the e
   - [x] Schema metadata
 - [x] Implement SAVE DSL commands
   - [x] SAVE DATASET
-  - [ ] SAVE TENSOR (Pending TensorDb integration)
-- [ ] Implement LOAD DSL commands
-  - [ ] LOAD DATASET (Needs Parquet -> Dataset conversion)
-  - [ ] LOAD TENSOR (Pending TensorDb integration)
+  - [x] SAVE TENSOR
+- [x] Implement LOAD DSL commands
+  - [x] LOAD DATASET (Parquet -> Dataset conversion)
+  - [x] LOAD TENSOR
 - [x] Implement LIST commands
   - [x] LIST DATASETS
   - [x] LIST TENSORS
@@ -209,18 +210,18 @@ This section refines and extends the roadmap starting from Phase 5.5, with the e
 
 ---
 
-## Phase 10: Engine Lifecycle & Instance Management
+## Phase 10: Engine Lifecycle & Instance Management ✅
 
 > Goal: Make VectorDB behave like a real database engine.
 
-- [ ] Engine instances
-  - Named databases
-  - Isolated DatasetStores
-- [ ] CREATE DATABASE / DROP DATABASE
-- [ ] USE database
-- [ ] Engine configuration file support
-- [ ] Startup/shutdown hooks
-- [ ] Graceful recovery from disk
+- [x] Engine instances
+  - [x] Named databases
+  - [x] Isolated DatasetStores
+- [x] CREATE DATABASE / DROP DATABASE
+- [x] USE database
+- [x] Engine configuration file support (`linal.toml`)
+- [x] Startup/shutdown hooks (Startup recovery implemented)
+- [x] Graceful recovery from disk
 
 ---
 
@@ -277,6 +278,7 @@ This phase formalizes the public identity of the project, aligning naming, tooli
 - **`.lnl`** is the canonical extension for LINAL scripts
   - Used for experiments, tests, pipelines, and analytical workflows
   - Example:
+
     ```bash
     linal run analysis.lnl
     ```

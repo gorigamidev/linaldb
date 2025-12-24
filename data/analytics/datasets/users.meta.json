@@ -1,0 +1,50 @@
+{
+  "name": "users",
+  "created_at": {
+    "secs_since_epoch": 1766597908,
+    "nanos_since_epoch": 676073000
+  },
+  "row_count": 2,
+  "column_stats": {
+    "name": {
+      "value_type": "String",
+      "null_count": 0,
+      "min": {
+        "String": "Alice"
+      },
+      "max": {
+        "String": "Bob"
+      }
+    },
+    "id": {
+      "value_type": "Int",
+      "null_count": 0,
+      "min": {
+        "Int": 1
+      },
+      "max": {
+        "Int": 2
+      }
+    }
+  },
+  "schema": {
+    "fields": [
+      {
+        "name": "id",
+        "value_type": "Int",
+        "nullable": false,
+        "is_lazy": false
+      },
+      {
+        "name": "name",
+        "value_type": "String",
+        "nullable": false,
+        "is_lazy": false
+      }
+    ],
+    "field_indices": {
+      "name": 1,
+      "id": 0
+    }
+  }
+}
