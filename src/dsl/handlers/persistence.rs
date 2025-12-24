@@ -56,12 +56,40 @@ fn handle_save_dataset(db: &mut TensorDb, rest: &str, line_no: usize) -> Result<
     )))
 }
 
-fn handle_save_tensor(_db: &mut TensorDb, _rest: &str, line_no: usize) -> Result<DslOutput, DslError> {
-    // TODO: Implement once TensorDb has get_tensor_by_name method
-    Err(DslError::Parse {
-        line: line_no,
-        msg: "SAVE TENSOR not yet implemented - requires tensor lookup method in TensorDb".to_string(),
-    })
+fn handle_save_tensor(db: &mut TensorDb, rest: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    let rest = rest.strip_prefix("TENSOR ").unwrap().trim();
+    
+    // Find TO keyword
+    let parts: Vec<&str> = rest.splitn(2, " TO ").collect();
+    if parts.len() != 2 {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected 'TO' keyword in SAVE TENSOR command".to_string(),
+        });
+    }
+    
+    let tensor_name = parts[0].trim();
+    let path = parts[1].trim().trim_matches('"');
+    
+    // Get tensor from db
+    let tensor = db.get(tensor_name)
+        .map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
+    
+    // Save using storage engine
+    let storage = ParquetStorage::new(path);
+    storage.save_tensor(tensor_name, tensor)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Failed to save tensor: {}", e),
+        })?;
+    
+    Ok(DslOutput::Message(format!(
+        "Saved tensor '{}' to '{}'",
+        tensor_name, path
+    )))
 }
 
 /// Handle LOAD command
@@ -82,20 +110,113 @@ pub fn handle_load(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
     }
 }
 
-fn handle_load_dataset(_db: &mut TensorDb, _rest: &str, line_no: usize) -> Result<DslOutput, DslError> {
-    // TODO: Implement load dataset functionality
-    Err(DslError::Parse {
-        line: line_no,
-        msg: "LOAD DATASET command not yet implemented".to_string(),
-    })
+fn handle_load_dataset(db: &mut TensorDb, rest: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    let rest = rest.strip_prefix("DATASET ").unwrap().trim();
+    
+    // Find FROM keyword
+    let parts: Vec<&str> = rest.splitn(2, " FROM ").collect();
+    if parts.len() != 2 {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected 'FROM' keyword in LOAD DATASET command".to_string(),
+        });
+    }
+    
+    let dataset_name = parts[0].trim();
+    let path = parts[1].trim().trim_matches('"');
+    
+    // Load from storage
+    let storage = ParquetStorage::new(path);
+    let dataset = storage.load_dataset(dataset_name)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Failed to load dataset: {}", e),
+        })?;
+    
+    // Insert into DB
+    // We explicitly insert the dataset. create_dataset usually takes name+schema.
+    // But we have a full dataset. We need a way to insert a full dataset or insert it via crate::core::store
+    // TensorDb has dataset_store field but it's private from here (handlers).
+    // TensorDb has `create_dataset` (makes empty), `insert_row` (adds one by one).
+    // We should probably add a `restore_dataset` method to TensorDb or use `dataset_store` if we expose it?
+    // Let's check TensorDb methods exposed.
+    // Step 398 shows:
+    // dataset_store is private.
+    // create_dataset(name, schema) -> Result<DatasetId>
+    // We can iterate and insert rows, but that's slow for bulk load.
+    // Ideally we add `import_dataset` to TensorDb or similar.
+    
+    // For now, let's assume we add `import_dataset` to TensorDb or similar.
+    // Or we iterate. Iterating is fine for MVP.
+    
+    let schema = dataset.schema.clone();
+    // Create new dataset in DB (this registers it)
+    match db.create_dataset(dataset_name.to_string(), schema) {
+        Ok(_) => {},
+        Err(crate::engine::EngineError::DatasetError(
+            crate::core::store::DatasetStoreError::NameAlreadyExists(_)
+        )) => {
+            // Option: Overwrite? Or Error?
+            // "LOAD" usually implies bringing it in. If it exists, maybe we should error or drop first.
+            return Err(DslError::Engine {
+                line: line_no,
+                source: crate::engine::EngineError::DatasetError(
+                    crate::core::store::DatasetStoreError::NameAlreadyExists(dataset_name.to_string())
+                ),
+            });
+        }
+        Err(e) => return Err(DslError::Engine { line: line_no, source: e }),
+    }
+    
+    let row_count = dataset.len();
+    
+    // Insert rows
+    for row in dataset.rows {
+        db.insert_row(dataset_name, row)
+            .map_err(|e| DslError::Engine { line: line_no, source: e })?;
+    }
+    
+    Ok(DslOutput::Message(format!(
+        "Loaded dataset '{}' from '{}' ({} rows)",
+        dataset_name, path, row_count
+    )))
 }
 
-fn handle_load_tensor(_db: &mut TensorDb, _rest: &str, line_no: usize) -> Result<DslOutput, DslError> {
-    // TODO: Implement once TensorDb has add_tensor_with_name method
-    Err(DslError::Parse {
-        line: line_no,
-        msg: "LOAD TENSOR not yet implemented - requires add_tensor_with_name method in TensorDb".to_string(),
-    })
+fn handle_load_tensor(db: &mut TensorDb, rest: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    let rest = rest.strip_prefix("TENSOR ").unwrap().trim();
+    
+    // Find FROM keyword
+    let parts: Vec<&str> = rest.splitn(2, " FROM ").collect();
+    if parts.len() != 2 {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected 'FROM' keyword in LOAD TENSOR command".to_string(),
+        });
+    }
+    
+    let tensor_name = parts[0].trim();
+    let path = parts[1].trim().trim_matches('"');
+    
+    // Load using storage engine
+    let storage = ParquetStorage::new(path);
+    let tensor = storage.load_tensor(tensor_name)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Failed to load tensor: {}", e),
+        })?;
+    
+    // Insert into db
+    // We create a new tensor with a new ID in the current DB, but reuse shape and data
+    db.insert_named(tensor_name, tensor.shape.clone(), tensor.data.clone())
+        .map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
+    
+    Ok(DslOutput::Message(format!(
+        "Loaded tensor '{}' from '{}'",
+        tensor_name, path
+    )))
 }
 
 /// Handle LIST DATASETS command

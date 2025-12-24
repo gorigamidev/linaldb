@@ -2,7 +2,7 @@
 
 use super::tuple::{Schema, Tuple};
 use super::value::{Value, ValueType};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -12,7 +12,7 @@ use std::time::SystemTime;
 pub struct DatasetId(pub u64);
 
 /// Statistics for a single column
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnStats {
     pub value_type: ValueType,
     pub null_count: usize,
@@ -21,21 +21,23 @@ pub struct ColumnStats {
 }
 
 /// Metadata about a dataset
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatasetMetadata {
     pub name: Option<String>,
     pub created_at: SystemTime,
     pub row_count: usize,
     pub column_stats: HashMap<String, ColumnStats>,
+    pub schema: Schema,
 }
 
 impl DatasetMetadata {
-    pub fn new(name: Option<String>) -> Self {
+    pub fn new(name: Option<String>, schema: Schema) -> Self {
         Self {
             name,
             created_at: SystemTime::now(),
             row_count: 0,
             column_stats: HashMap::new(),
+            schema,
         }
     }
 
@@ -106,7 +108,7 @@ pub struct Dataset {
 impl Dataset {
     /// Create a new empty dataset
     pub fn new(id: DatasetId, schema: Arc<Schema>, name: Option<String>) -> Self {
-        let mut metadata = DatasetMetadata::new(name);
+        let mut metadata = DatasetMetadata::new(name, (*schema).clone());
         metadata.update_stats(&schema, &[]);
 
         Self {
@@ -133,7 +135,7 @@ impl Dataset {
             }
         }
 
-        let mut metadata = DatasetMetadata::new(name);
+        let mut metadata = DatasetMetadata::new(name, (*schema).clone());
         metadata.update_stats(&schema, &rows);
 
         Ok(Self {

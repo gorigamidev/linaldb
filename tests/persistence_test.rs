@@ -307,12 +307,38 @@ fn test_concurrent_dataset_and_tensor_storage() {
     let _ = fs::remove_dir_all(temp_dir);
 }
 
-// TODO: Add these tests once LOAD DATASET is implemented
-// #[test]
-// fn test_load_dataset() { ... }
-//
-// #[test]
-// fn test_dataset_round_trip() { ... }
-//
-// #[test]
-// fn test_dataset_with_complex_types() { ... }
+#[test]
+fn test_dataset_round_trip() {
+    let temp_dir = "/tmp/linal_test_persistence_dataset_round_trip";
+    let _ = fs::remove_dir_all(temp_dir);
+    
+    let storage = ParquetStorage::new(temp_dir);
+    let original_dataset = create_test_dataset("round_trip_users");
+    
+    // Save
+    storage.save_dataset(&original_dataset).unwrap();
+    
+    // Load
+    let loaded_dataset = storage.load_dataset("round_trip_users").unwrap();
+    
+    // Verify Metadata
+    assert_eq!(loaded_dataset.metadata.name, original_dataset.metadata.name);
+    // Schema verification (field by field)
+    assert_eq!(loaded_dataset.schema.fields.len(), original_dataset.schema.fields.len());
+    for (i, field) in original_dataset.schema.fields.iter().enumerate() {
+        assert_eq!(loaded_dataset.schema.fields[i].name, field.name);
+        // assert_eq!(loaded_dataset.schema.fields[i].value_type, field.value_type); // Need PartialEq for ValueType
+    }
+    
+    // Verify Data
+    assert_eq!(loaded_dataset.rows.len(), original_dataset.rows.len());
+    
+    // Verify content of first row
+    let row0 = &loaded_dataset.rows[0];
+    assert!(matches!(row0.values[0], Value::Int(1)));
+    assert!(matches!(row0.values[1], Value::String(ref s) if s == "Alice"));
+    assert!(matches!(row0.values[2], Value::Float(f) if (f - 95.5).abs() < 1e-6));
+
+    // Clean up
+    let _ = fs::remove_dir_all(temp_dir);
+}

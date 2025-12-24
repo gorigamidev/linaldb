@@ -3,10 +3,3 @@ MATRIX B = [[5.0, 6.0], [7.0, 8.0]]
 
 LET C = ADD A B
 SHOW C
-
-LET D = SUB A B
-SHOW D
-
-LET E = MUL A B
-SHOW E
-

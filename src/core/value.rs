@@ -1,11 +1,14 @@
 // src/value.rs
 
-use serde::Serialize;
+//use super::tensor::Tensor;
+//use crate::core::tensor::Shape;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Represents a value in the database - supports heterogeneous types
 /// Represents a value in the database - supports heterogeneous types
-#[derive(Debug, Clone, Serialize)]
+/// Represents a value in the database - supports heterogeneous types
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Value {
     Float(f32),
     Int(i64),
@@ -86,7 +89,7 @@ impl std::hash::Hash for Value {
 }
 
 /// Type descriptor for values
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ValueType {
     Float,
     Int,

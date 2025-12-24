@@ -131,13 +131,14 @@ pub fn handle_select(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
     let result_schema = physical_plan.schema();
     let ds = crate::core::dataset::Dataset {
         id: crate::core::dataset::DatasetId(0),
-        schema: result_schema,
+        schema: result_schema.clone(),
         rows: result_rows.clone(),
         metadata: crate::core::dataset::DatasetMetadata {
             name: Some("Query Result".into()),
             created_at: std::time::SystemTime::now(),
             row_count: result_rows.len(),
             column_stats: std::collections::HashMap::new(),
+            schema: result_schema.as_ref().clone(), // Clone the full schema
         },
         indices: std::collections::HashMap::new(),
         lazy_expressions: std::collections::HashMap::new(),

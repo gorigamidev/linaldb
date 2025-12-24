@@ -2,12 +2,14 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
-use arrow::array::{ArrayRef, Float32Array, Int64Array, StringArray, BooleanArray};
+use arrow::array::{Array, ArrayRef, Float32Array, Int64Array, StringArray, BooleanArray};
 use arrow::datatypes::{Schema as ArrowSchema, Field as ArrowField, DataType};
 use arrow::record_batch::RecordBatch;
-use parquet::arrow::ArrowWriter;
+use parquet::arrow::arrow_writer::ArrowWriter;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::file::properties::WriterProperties;
-use crate::core::dataset::Dataset;
+use crate::core::dataset::{Dataset, DatasetMetadata};
+use crate::core::tuple::{Schema, Tuple};
 use crate::core::tensor::Tensor;
 use crate::core::value::{Value, ValueType};
 
@@ -189,6 +191,78 @@ impl ParquetStorage {
         RecordBatch::try_new(arrow_schema, arrays)
             .map_err(|e| StorageError::Arrow(e))
     }
+
+    /// Convert Arrow RecordBatch to LINAL Rows
+    fn record_batch_to_rows(&self, batch: &RecordBatch, schema: &Arc<Schema>) -> Result<Vec<Tuple>, StorageError> {
+        let num_rows = batch.num_rows();
+        let mut tuples = Vec::with_capacity(num_rows);
+        
+        let mut columns_data: Vec<Vec<Value>> = Vec::new();
+        
+        for field in &schema.fields {
+            let arrow_col = batch.column_by_name(&field.name)
+                .ok_or_else(|| StorageError::Serialization(format!("Column {} missing in Parquet file", field.name)))?;
+            
+            let values = self.arrow_array_to_values(arrow_col, &field.value_type, num_rows)?;
+            columns_data.push(values);
+        }
+        
+        for i in 0..num_rows {
+            let mut row_values = Vec::with_capacity(schema.fields.len());
+            for col_idx in 0..schema.fields.len() {
+                row_values.push(columns_data[col_idx][i].clone());
+            }
+            tuples.push(Tuple::new(schema.clone(), row_values).map_err(|e| StorageError::Serialization(e))?);
+        }
+        
+        Ok(tuples)
+    }
+    
+    fn arrow_array_to_values(&self, array: &ArrayRef, target_type: &ValueType, num_rows: usize) -> Result<Vec<Value>, StorageError> {
+        match target_type {
+             ValueType::Int => {
+                 let int_array = array.as_any().downcast_ref::<Int64Array>()
+                     .ok_or_else(|| StorageError::Serialization("Expected Int64Array".to_string()))?;
+                 Ok((0..num_rows).map(|i| {
+                     if int_array.is_null(i) { Value::Null } else { Value::Int(int_array.value(i)) }
+                 }).collect())
+             },
+             ValueType::Float => {
+                 let float_array = array.as_any().downcast_ref::<Float32Array>()
+                     .ok_or_else(|| StorageError::Serialization("Expected Float32Array".to_string()))?;
+                 Ok((0..num_rows).map(|i| {
+                     if float_array.is_null(i) { Value::Null } else { Value::Float(float_array.value(i)) }
+                 }).collect())
+             },
+             ValueType::String => {
+                 let string_array = array.as_any().downcast_ref::<StringArray>()
+                     .ok_or_else(|| StorageError::Serialization("Expected StringArray".to_string()))?;
+                 Ok((0..num_rows).map(|i| {
+                     if string_array.is_null(i) { Value::Null } else { Value::String(string_array.value(i).to_string()) }
+                 }).collect())
+             },
+             ValueType::Bool => {
+                 let bool_array = array.as_any().downcast_ref::<BooleanArray>()
+                     .ok_or_else(|| StorageError::Serialization("Expected BooleanArray".to_string()))?;
+                 Ok((0..num_rows).map(|i| {
+                     if bool_array.is_null(i) { Value::Null } else { Value::Bool(bool_array.value(i)) }
+                 }).collect())
+             },
+             ValueType::Vector(_) | ValueType::Matrix(_, _) => {
+                 let string_array = array.as_any().downcast_ref::<StringArray>()
+                     .ok_or_else(|| StorageError::Serialization("Expected StringArray for complex type".to_string()))?;
+                 Ok((0..num_rows).map(|i| {
+                     if string_array.is_null(i) { 
+                         Value::Null 
+                     } else { 
+                         let json_str = string_array.value(i);
+                         serde_json::from_str(json_str).unwrap_or(Value::Null) 
+                     }
+                 }).collect())
+             },
+             ValueType::Null => Ok(vec![Value::Null; num_rows]),
+        }
+    }
 }
 
 impl StorageEngine for ParquetStorage {
@@ -210,6 +284,7 @@ impl StorageEngine for ParquetStorage {
         writer.close()?;
         
         // Save metadata as JSON
+        // Metadata now includes Schema, which is critical for LOAD
         let meta_path = self.metadata_path(dataset_name);
         let metadata_json = serde_json::to_string_pretty(&dataset.metadata)
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
@@ -218,9 +293,45 @@ impl StorageEngine for ParquetStorage {
         Ok(())
     }
     
-    fn load_dataset(&self, _name: &str) -> Result<Dataset, StorageError> {
-        // TODO: Implement Parquet to Dataset conversion
-        Err(StorageError::Serialization("Load not yet implemented".to_string()))
+    fn load_dataset(&self, name: &str) -> Result<Dataset, StorageError> {
+        // 1. Load Metadata
+        let meta_path = self.metadata_path(name);
+        if !Path::new(&meta_path).exists() {
+            return Err(StorageError::DatasetNotFound(name.to_string()));
+        }
+        
+        let metadata_json = fs::read_to_string(&meta_path)?;
+        let metadata: DatasetMetadata = serde_json::from_str(&metadata_json)
+            .map_err(|e| StorageError::Serialization(format!("Metadata error: {}", e)))?;
+            
+        // 2. Load Parquet Data
+        let data_path = self.dataset_path(name);
+        if !Path::new(&data_path).exists() {
+            return Err(StorageError::DatasetNotFound(format!("Data file missing for {}", name)));
+        }
+        
+        let file = fs::File::open(&data_path)?;
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        let record_batch_reader = builder.with_batch_size(2048).build()
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        
+        let mut rows = Vec::new();
+        // Schema is now in metadata
+        let schema = Arc::new(metadata.schema.clone());
+
+        for batch in record_batch_reader {
+             let batch = batch?;
+             let batch_rows = self.record_batch_to_rows(&batch, &schema)?;
+             rows.extend(batch_rows);
+        }
+
+        // 3. Reconstruct Dataset
+        let mut dataset = Dataset::new(crate::core::dataset::DatasetId(0), schema, Some(name.to_string()));
+        dataset.rows = rows;
+        dataset.metadata = metadata;
+        
+        Ok(dataset)
     }
     
     fn dataset_exists(&self, name: &str) -> bool {

@@ -1,0 +1,29 @@
+# Persistence Demo Script
+# This script demonstrates how to save and load datasets and tensors using the new persistence layer.
+
+# 1. Create and populate a dataset
+DATASET users COLUMNS (id: INT, name: STRING, embedding: VECTOR(3))
+INSERT INTO users VALUES (1, "Alice", [0.1, 0.2, 0.3])
+INSERT INTO users VALUES (2, "Bob", [0.4, 0.5, 0.6])
+
+# 2. Save the dataset to disk (Parquet)
+SAVE DATASET users
+
+# 3. Create and save a tensor (variable)
+LET model_weights = [[1.0, 0.0], [0.0, 1.0]]
+SAVE TENSOR model_weights
+
+# 4. List what we have on disk
+LIST DATASETS
+LIST TENSORS
+
+# 5. Load data back (Simulating a new session)
+# ensuring we can load it into a new name or overwrite (DSL currently loads into same name)
+# For demo purposes, we usually rely on the fact that it's there.
+# Let's try loading it.
+LOAD DATASET users
+LOAD TENSOR model_weights
+
+# 6. Verify by querying/using
+SELECT * FROM users
+LET val = model_weights
