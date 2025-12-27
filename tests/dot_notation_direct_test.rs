@@ -50,7 +50,7 @@ fn test_dataset_column_access_direct() {
     println!("Ages tensor data: {:?}", tensor.data);
 
     assert_eq!(tensor.shape.dims, vec![2]);
-    assert_eq!(tensor.data, vec![30.0, 25.0]);
+    assert_eq!(tensor.data_ref(), vec![30.0, 25.0]);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn test_tuple_field_access_direct() {
     println!("Score tensor data: {:?}", tensor.data);
 
     assert_eq!(tensor.shape.dims, Vec::<usize>::new()); // Scalar
-    assert_eq!(tensor.data, vec![95.5]);
+    assert_eq!(tensor.data_ref(), vec![95.5]);
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn test_multiple_columns() {
     let y = db.get("y_vals").unwrap();
     let z = db.get("z_vals").unwrap();
 
-    assert_eq!(x.data, vec![1.0, 4.0]);
-    assert_eq!(y.data, vec![2.0, 5.0]);
-    assert_eq!(z.data, vec![3.0, 6.0]);
+    assert_eq!(x.data_ref(), vec![1.0, 4.0]);
+    assert_eq!(y.data_ref(), vec![2.0, 5.0]);
+    assert_eq!(z.data_ref(), vec![3.0, 6.0]);
 }

@@ -1,6 +1,6 @@
 // src/dataset_store.rs
 
-use crate::core::dataset::{Dataset, DatasetId};
+use crate::core::dataset_legacy::{Dataset, DatasetId};
 use std::collections::HashMap;
 
 /// Error types for dataset store operations

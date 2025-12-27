@@ -1,4 +1,4 @@
-use crate::core::dataset::DatasetId;
+use crate::core::dataset_legacy::DatasetId;
 use crate::core::tensor::TensorId;
 use bumpalo::Bump;
 

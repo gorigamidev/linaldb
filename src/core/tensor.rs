@@ -36,14 +36,12 @@ impl Shape {
 pub struct Tensor {
     pub id: TensorId,
     pub shape: Shape,
-    pub data: Vec<f32>,
-    #[cfg(feature = "zero-copy")]
-    #[serde(skip)] // Don't serialize shared data for now
-    pub shared_data: Option<std::sync::Arc<Vec<f32>>>,
+    /// Primary storage using Arc for zero-copy sharing
+    pub data: std::sync::Arc<Vec<f32>>,
 }
 
 impl Tensor {
-    /// Crea un tensor verificando que data.len() coincide con shape.num_elements()
+    /// Creates a new tensor, wrapping data in an Arc
     pub fn new(id: TensorId, shape: Shape, data: Vec<f32>) -> Result<Self, String> {
         let expected = shape.num_elements();
         if data.len() != expected {
@@ -58,14 +56,11 @@ impl Tensor {
         Ok(Self {
             id,
             shape,
-            data,
-            #[cfg(feature = "zero-copy")]
-            shared_data: None,
+            data: std::sync::Arc::new(data),
         })
     }
 
     /// Creates a tensor from shared data (zero-copy)
-    #[cfg(feature = "zero-copy")]
     pub fn from_shared(
         id: TensorId,
         shape: Shape,
@@ -81,40 +76,22 @@ impl Tensor {
             ));
         }
 
-        Ok(Self {
-            id,
-            shape,
-            data: Vec::new(), // Empty vec when using shared data
-            shared_data: Some(data),
-        })
+        Ok(Self { id, shape, data })
     }
 
-    /// Get reference to data slice, handling both owned and shared storage
+    /// Get reference to data slice
     pub fn data_ref(&self) -> &[f32] {
-        #[cfg(feature = "zero-copy")]
-        if let Some(shared) = &self.shared_data {
-            return shared;
-        }
         &self.data
     }
 
-    /// Get shared reference to data (zero-copy if possible)
-    #[cfg(feature = "zero-copy")]
+    /// Get shared reference to data (zero-copy)
     pub fn share(&self) -> std::sync::Arc<Vec<f32>> {
-        if let Some(shared) = &self.shared_data {
-            return shared.clone();
-        }
-        std::sync::Arc::new(self.data.clone())
+        self.data.clone()
     }
 
-    /// Get mutable reference to data (copy-on-write if shared)
-    #[cfg(feature = "zero-copy")]
+    /// Get mutable reference to data (copy-on-write)
     pub fn data_mut(&mut self) -> &mut Vec<f32> {
-        if let Some(shared) = self.shared_data.take() {
-            // If we have shared data, we must clone it to own it (Copy-On-Write)
-            self.data = (*shared).clone();
-        }
-        &mut self.data
+        std::sync::Arc::make_mut(&mut self.data)
     }
 
     /// Rank del tensor (0 = escalar, 1 = vector, 2 = matriz...)

@@ -1,19 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::core::dataset::{Dataset, DatasetId};
+use crate::core::dataset_legacy::{Dataset, DatasetId};
 use crate::core::store::{DatasetStore, InMemoryTensorStore};
 use crate::core::tensor::{Shape, Tensor, TensorId};
 use crate::core::tuple::{Schema, Tuple};
 
-use super::kernels::{
-    add, add_relaxed, cosine_similarity_1d, distance_1d, divide, divide_relaxed, dot_1d, flatten,
-    matmul, multiply, multiply_relaxed, normalize_1d, reshape, scalar_mul, sub, sub_relaxed,
-    transpose,
-};
-
 use super::error::EngineError;
 use super::operations::{BinaryOp, TensorKind, UnaryOp};
+use crate::engine::context::ExecutionContext;
 
 struct NameEntry {
     id: TensorId,
@@ -23,9 +18,12 @@ struct NameEntry {
 /// Individual database instance containing its own stores and name mappings
 pub struct DatabaseInstance {
     pub name: String,
-    store: InMemoryTensorStore,
+    pub store: InMemoryTensorStore,
     names: HashMap<String, NameEntry>,
     dataset_store: DatasetStore,
+    pub tensor_datasets: crate::core::dataset::DatasetRegistry,
+    pub dataset_vars: HashMap<String, String>,
+    pub backend: Box<dyn crate::core::backend::ComputeBackend>,
 }
 
 impl DatabaseInstance {
@@ -35,6 +33,9 @@ impl DatabaseInstance {
             store: InMemoryTensorStore::new(),
             names: HashMap::new(),
             dataset_store: DatasetStore::new(),
+            tensor_datasets: crate::core::dataset::DatasetRegistry::new(),
+            dataset_vars: HashMap::new(),
+            backend: Box::new(crate::core::backend::CpuBackend::new()),
         }
     }
 
@@ -54,6 +55,225 @@ impl DatabaseInstance {
         dataset.metadata.extra.insert(key, value);
         dataset.metadata.updated_at = chrono::Utc::now();
         Ok(())
+    }
+
+    pub fn get_tensor_id(&self, name: &str) -> Option<TensorId> {
+        self.names.get(name).map(|e| e.id)
+    }
+
+    pub fn remove_tensor(&mut self, name: &str) -> bool {
+        if let Some(entry) = self.names.remove(name) {
+            self.store.remove(entry.id)
+        } else {
+            false
+        }
+    }
+
+    pub fn register_tensor_dataset(&mut self, ds: crate::core::dataset::Dataset) {
+        let _ = self.tensor_datasets.register(ds);
+    }
+
+    pub fn register_dataset_var(&mut self, var_name: String, ds_name: String) {
+        self.dataset_vars.insert(var_name, ds_name);
+    }
+
+    pub fn add_column_to_tensor_dataset(
+        &mut self,
+        ds_var_or_name: &str,
+        col_name: &str,
+        tensor_var: &str,
+    ) -> Result<(), EngineError> {
+        use crate::core::value::ValueType;
+        // 1. Get tensor_id from names
+        let entry = self
+            .names
+            .get(tensor_var)
+            .ok_or_else(|| EngineError::NameNotFound(tensor_var.to_string()))?;
+        let tensor_id = entry.id;
+
+        // 2. Get tensor to check shape/type
+        let tensor = self.store.get(tensor_id).map_err(|_| {
+            EngineError::InvalidOp(format!("Tensor '{}' not found in store", tensor_var))
+        })?;
+
+        // 3. Get dataset name (resolve variable if needed)
+        let ds_name = self
+            .dataset_vars
+            .get(ds_var_or_name)
+            .map(|s| s.as_str())
+            .unwrap_or(ds_var_or_name);
+
+        let ds = self.tensor_datasets.get_mut(ds_name).ok_or_else(|| {
+            EngineError::InvalidOp(format!("Tensor dataset '{}' not found", ds_name))
+        })?;
+
+        // 4. Update schema and columns
+        let value_type = match tensor.shape.rank() {
+            1 => ValueType::Vector(tensor.shape.dims[0]),
+            2 => {
+                if tensor.shape.dims.len() >= 2 {
+                    ValueType::Matrix(tensor.shape.dims[0], tensor.shape.dims[1])
+                } else {
+                    ValueType::Vector(tensor.shape.dims[0])
+                }
+            }
+            0 => ValueType::Float,
+            _ => ValueType::Vector(tensor.shape.num_elements()),
+        };
+
+        // 4. Validate row count consistency
+        let rows_in_new_col = match tensor.shape.rank() {
+            0 => 1,
+            _ => tensor.shape.dims[0],
+        };
+
+        if !ds.columns.is_empty() {
+            // Check first existing column
+            if let Some((_, first_tensor_id)) = ds.columns.iter().next() {
+                let first_tensor = self.store.get(*first_tensor_id)?;
+                let rows_in_ds = match first_tensor.shape.rank() {
+                    0 => 1,
+                    _ => first_tensor.shape.dims[0],
+                };
+
+                if rows_in_new_col != rows_in_ds {
+                    return Err(EngineError::InvalidOp(format!(
+                        "Column '{}' has {} rows, but dataset '{}' has {} rows",
+                        col_name, rows_in_new_col, ds_name, rows_in_ds
+                    )));
+                }
+            }
+        }
+
+        let schema = crate::core::dataset::ColumnSchema {
+            name: col_name.to_string(),
+            value_type,
+            shape: tensor.shape.clone(),
+        };
+
+        ds.add_column(col_name.to_string(), tensor_id, schema);
+        Ok(())
+    }
+    /// Verify that all columns in a tensor-first dataset point to existing tensors.
+    /// Returns a list of column names with missing tensors.
+    pub fn verify_tensor_dataset(&self, ds_name_or_var: &str) -> Result<Vec<String>, EngineError> {
+        let ds_name = self
+            .dataset_vars
+            .get(ds_name_or_var)
+            .map(|s| s.as_str())
+            .unwrap_or(ds_name_or_var);
+
+        let ds = self.tensor_datasets.get(ds_name).ok_or_else(|| {
+            EngineError::InvalidOp(format!("Tensor dataset '{}' not found", ds_name))
+        })?;
+
+        let mut missing_cols = Vec::new();
+        for (col_name, tensor_id) in &ds.columns {
+            if self.store.get(*tensor_id).is_err() {
+                missing_cols.push(col_name.clone());
+            }
+        }
+        Ok(missing_cols)
+    }
+
+    pub fn materialize_tensor_dataset(
+        &self,
+        name: &str,
+    ) -> Result<crate::core::dataset_legacy::Dataset, EngineError> {
+        // Resolve name via vars if needed
+        let ds_name = self
+            .dataset_vars
+            .get(name)
+            .map(|s| s.as_str())
+            .unwrap_or(name);
+
+        let ds = self
+            .tensor_datasets
+            .get(ds_name)
+            .ok_or_else(|| EngineError::DatasetNotFound(ds_name.to_string()))?;
+
+        if ds.columns.is_empty() {
+            return Err(EngineError::InvalidOp(format!(
+                "Cannot materialize empty tensor dataset '{}'",
+                ds_name
+            )));
+        }
+
+        // 1. Determine number of rows and column schemas
+        let mut row_count = 0;
+        let mut fields = Vec::new();
+        let mut col_data = Vec::new();
+
+        // Sort column names for deterministic schema
+        let mut col_names: Vec<_> = ds.columns.keys().cloned().collect();
+        col_names.sort();
+
+        for col_name in col_names {
+            let tensor_id = ds.columns.get(&col_name).unwrap();
+            let tensor = self.store.get(*tensor_id)?;
+
+            let (rows_in_col, vt) = match tensor.shape.rank() {
+                0 => (1, crate::core::value::ValueType::Float), // One row, one scalar
+                1 => (
+                    tensor.shape.dims[0],
+                    crate::core::value::ValueType::Float, // N rows, each a scalar
+                ),
+                2 => (
+                    tensor.shape.dims[0],
+                    crate::core::value::ValueType::Vector(tensor.shape.dims[1]), // N rows, each a vector
+                ),
+                _ => {
+                    return Err(EngineError::InvalidOp(format!(
+                        "Cannot materialize tensor with rank > 2 (rank: {})",
+                        tensor.shape.rank()
+                    )))
+                }
+            };
+
+            if row_count == 0 {
+                row_count = rows_in_col;
+            } else if rows_in_col != row_count {
+                return Err(EngineError::InvalidOp(format!(
+                    "Column '{}' has {} rows, but previous columns had {}",
+                    col_name, rows_in_col, row_count
+                )));
+            }
+
+            fields.push(crate::core::tuple::Field::new(&col_name, vt));
+            col_data.push(tensor);
+        }
+
+        let schema = std::sync::Arc::new(crate::core::tuple::Schema::new(fields));
+        let mut rows = Vec::with_capacity(row_count);
+
+        // 2. Build rows
+        for i in 0..row_count {
+            let mut values = Vec::with_capacity(col_data.len());
+            for tensor in &col_data {
+                let val = match tensor.shape.rank() {
+                    0 => crate::core::value::Value::Float(tensor.data[0]),
+                    1 => crate::core::value::Value::Float(tensor.data[i]),
+                    2 => {
+                        let dim = tensor.shape.dims[1];
+                        let start = i * dim;
+                        let end = (i + 1) * dim;
+                        crate::core::value::Value::Vector(tensor.data[start..end].to_vec())
+                    }
+                    _ => unreachable!(),
+                };
+                values.push(val);
+            }
+            rows.push(crate::core::tuple::Tuple::new(schema.clone(), values).unwrap());
+        }
+
+        let legacy_id = crate::core::dataset_legacy::DatasetId(0);
+        Ok(crate::core::dataset_legacy::Dataset::with_rows(
+            legacy_id,
+            schema,
+            rows,
+            Some(ds_name.to_string()),
+        )
+        .map_err(|e| EngineError::InvalidOp(e))?)
     }
 }
 
@@ -202,25 +422,71 @@ impl TensorDb {
         self.active_instance().get(name)
     }
 
+    pub fn register_tensor_dataset(&mut self, ds: crate::core::dataset::Dataset) {
+        self.active_instance_mut().register_tensor_dataset(ds);
+    }
+
+    pub fn register_dataset_var(&mut self, var_name: String, ds_name: String) {
+        self.active_instance_mut()
+            .register_dataset_var(var_name, ds_name);
+    }
+
+    pub fn add_column_to_tensor_dataset(
+        &mut self,
+        ds_name: &str,
+        col_name: &str,
+        tensor_var: &str,
+    ) -> Result<(), EngineError> {
+        self.active_instance_mut()
+            .add_column_to_tensor_dataset(ds_name, col_name, tensor_var)
+    }
+
+    pub fn get_tensor_dataset(&self, var_or_name: &str) -> Option<&crate::core::dataset::Dataset> {
+        let instance = self.active_instance();
+        let ds_name = instance
+            .dataset_vars
+            .get(var_or_name)
+            .map(|s| s.as_str())
+            .unwrap_or(var_or_name);
+        instance.tensor_datasets.get(ds_name)
+    }
+
+    pub fn materialize_tensor_dataset(
+        &self,
+        name: &str,
+    ) -> Result<crate::core::dataset_legacy::Dataset, EngineError> {
+        self.active_instance().materialize_tensor_dataset(name)
+    }
+
+    pub fn verify_tensor_dataset(&self, ds_name_or_var: &str) -> Result<Vec<String>, EngineError> {
+        self.active_instance().verify_tensor_dataset(ds_name_or_var)
+    }
+
+    pub fn remove_tensor(&mut self, name: &str) -> bool {
+        self.active_instance_mut().remove_tensor(name)
+    }
+
     pub fn eval_unary(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         input_name: &str,
         op: UnaryOp,
     ) -> Result<(), EngineError> {
         self.active_instance_mut()
-            .eval_unary(output_name, input_name, op)
+            .eval_unary(ctx, output_name, input_name, op)
     }
 
     pub fn eval_binary(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         left_name: &str,
         right_name: &str,
         op: BinaryOp,
     ) -> Result<(), EngineError> {
         self.active_instance_mut()
-            .eval_binary(output_name, left_name, right_name, op)
+            .eval_binary(ctx, output_name, left_name, right_name, op)
     }
 
     pub fn list_names(&self) -> Vec<String> {
@@ -229,32 +495,35 @@ impl TensorDb {
 
     pub fn eval_matmul(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         left_name: &str,
         right_name: &str,
     ) -> Result<(), EngineError> {
         self.active_instance_mut()
-            .eval_matmul(output_name, left_name, right_name)
+            .eval_matmul(ctx, output_name, left_name, right_name)
     }
 
     pub fn eval_reshape(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         input_name: &str,
         new_shape: Shape,
     ) -> Result<(), EngineError> {
         self.active_instance_mut()
-            .eval_reshape(output_name, input_name, new_shape)
+            .eval_reshape(ctx, output_name, input_name, new_shape)
     }
 
     pub fn eval_stack(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         input_names: Vec<&str>,
         axis: usize,
     ) -> Result<(), EngineError> {
         self.active_instance_mut()
-            .eval_stack(output_name, input_names, axis)
+            .eval_stack(ctx, output_name, input_names, axis)
     }
 
     pub fn create_dataset(
@@ -402,11 +671,11 @@ impl TensorDb {
         ctx: &mut crate::engine::context::ExecutionContext,
         command: &str,
     ) -> Result<crate::dsl::DslOutput, crate::dsl::DslError> {
-        use crate::dsl::execute_line;
+        use crate::dsl::execute_line_with_context;
 
         // For Phase 1, just call existing implementation
         // Phase 2 will use ctx for arena allocation
-        let result = execute_line(self, command, 1)?;
+        let result = execute_line_with_context(self, command, 1, Some(ctx))?;
 
         // Cleanup any tracked resources
         self.cleanup_context_resources(ctx);
@@ -473,6 +742,7 @@ impl DatabaseInstance {
     /// Evalúa operación unaria: SCALE, etc.
     pub fn eval_unary(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         input_name: &str,
         op: UnaryOp,
@@ -482,14 +752,22 @@ impl DatabaseInstance {
         let new_id = self.store.gen_id_internal();
 
         let result = match op {
-            UnaryOp::Scale(s) => {
-                scalar_mul(&in_tensor, s, new_id).map_err(EngineError::InvalidOp)?
-            }
-            UnaryOp::Normalize => {
-                normalize_1d(&in_tensor, new_id).map_err(EngineError::InvalidOp)?
-            }
-            UnaryOp::Transpose => transpose(&in_tensor, new_id).map_err(EngineError::InvalidOp)?,
-            UnaryOp::Flatten => flatten(&in_tensor, new_id).map_err(EngineError::InvalidOp)?,
+            UnaryOp::Scale(s) => self
+                .backend
+                .scale(ctx, &in_tensor, s, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            UnaryOp::Normalize => self
+                .backend
+                .normalize(ctx, &in_tensor, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            UnaryOp::Transpose => self
+                .backend
+                .transpose(ctx, &in_tensor, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            UnaryOp::Flatten => self
+                .backend
+                .flatten(ctx, &in_tensor, new_id)
+                .map_err(EngineError::InvalidOp)?,
         };
 
         let out_id = self.store.insert_existing_tensor(result)?;
@@ -506,6 +784,7 @@ impl DatabaseInstance {
     /// Evalúa operación binaria: ADD, SUBTRACT, CORRELATE, SIMILARITY, DISTANCE
     pub fn eval_binary(
         &mut self,
+        ctx: &mut crate::engine::context::ExecutionContext,
         output_name: impl Into<String>,
         left_name: &str,
         right_name: &str,
@@ -524,45 +803,45 @@ impl DatabaseInstance {
         };
 
         let result_tensor = match op {
-            BinaryOp::Add => match out_kind {
-                TensorKind::Strict => add(&a, &b, new_id).map_err(EngineError::InvalidOp)?,
-                TensorKind::Normal => {
-                    add_relaxed(&a, &b, new_id).map_err(EngineError::InvalidOp)?
-                }
-            },
-            BinaryOp::Subtract => match out_kind {
-                TensorKind::Strict => sub(&a, &b, new_id).map_err(EngineError::InvalidOp)?,
-                TensorKind::Normal => {
-                    sub_relaxed(&a, &b, new_id).map_err(EngineError::InvalidOp)?
-                }
-            },
-            BinaryOp::Multiply => match out_kind {
-                TensorKind::Strict => multiply(&a, &b, new_id).map_err(EngineError::InvalidOp)?,
-                TensorKind::Normal => {
-                    multiply_relaxed(&a, &b, new_id).map_err(EngineError::InvalidOp)?
-                }
-            },
-            BinaryOp::Divide => match out_kind {
-                TensorKind::Strict => divide(&a, &b, new_id).map_err(EngineError::InvalidOp)?,
-                TensorKind::Normal => {
-                    divide_relaxed(&a, &b, new_id).map_err(EngineError::InvalidOp)?
-                }
-            },
+            BinaryOp::Add => self
+                .backend
+                .add(ctx, &a, &b, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            BinaryOp::Subtract => self
+                .backend
+                .sub(ctx, &a, &b, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            BinaryOp::Multiply => self
+                .backend
+                .multiply(ctx, &a, &b, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            BinaryOp::Divide => self
+                .backend
+                .divide(ctx, &a, &b, new_id)
+                .map_err(EngineError::InvalidOp)?,
             BinaryOp::Correlate => {
-                // CORRELATE = dot → escalar (sigue siendo estricto en shape)
-                let value = dot_1d(&a, &b).map_err(EngineError::InvalidOp)?;
+                let value = self
+                    .backend
+                    .dot(ctx, &a, &b)
+                    .map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
                 Tensor::new(new_id, shape, data).map_err(EngineError::InvalidOp)?
             }
             BinaryOp::Similarity => {
-                let value = cosine_similarity_1d(&a, &b).map_err(EngineError::InvalidOp)?;
+                let value = self
+                    .backend
+                    .cosine_similarity(ctx, &a, &b)
+                    .map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
                 Tensor::new(new_id, shape, data).map_err(EngineError::InvalidOp)?
             }
             BinaryOp::Distance => {
-                let value = distance_1d(&a, &b).map_err(EngineError::InvalidOp)?;
+                let value = self
+                    .backend
+                    .distance(ctx, &a, &b)
+                    .map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
                 Tensor::new(new_id, shape, data).map_err(EngineError::InvalidOp)?
@@ -588,6 +867,7 @@ impl DatabaseInstance {
     /// Matrix multiplication: C = MATMUL A B
     pub fn eval_matmul(
         &mut self,
+        ctx: &mut crate::engine::context::ExecutionContext,
         output_name: impl Into<String>,
         left_name: &str,
         right_name: &str,
@@ -598,7 +878,10 @@ impl DatabaseInstance {
         let b = b_ref.clone();
         let new_id = self.store.gen_id_internal();
 
-        let result = matmul(&a, &b, new_id).map_err(EngineError::InvalidOp)?;
+        let result = self
+            .backend
+            .matmul(ctx, &a, &b, new_id)
+            .map_err(EngineError::InvalidOp)?;
 
         let out_kind = match (kind_a, kind_b) {
             (TensorKind::Strict, _) | (_, TensorKind::Strict) => TensorKind::Strict,
@@ -619,6 +902,7 @@ impl DatabaseInstance {
     /// Reshape tensor: B = RESHAPE A TO [new_shape]
     pub fn eval_reshape(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         input_name: &str,
         new_shape: Shape,
@@ -627,7 +911,10 @@ impl DatabaseInstance {
         let in_tensor = in_tensor_ref.clone();
         let new_id = self.store.gen_id_internal();
 
-        let result = reshape(&in_tensor, new_shape, new_id).map_err(EngineError::InvalidOp)?;
+        let result = self
+            .backend
+            .reshape(ctx, &in_tensor, new_shape, new_id)
+            .map_err(EngineError::InvalidOp)?;
 
         let out_id = self.store.insert_existing_tensor(result)?;
         self.names.insert(
@@ -643,6 +930,7 @@ impl DatabaseInstance {
     /// Stack tensors: C = STACK A B
     pub fn eval_stack(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         input_names: Vec<&str>,
         axis: usize,
@@ -662,8 +950,10 @@ impl DatabaseInstance {
         let tensor_refs: Vec<&Tensor> = tensors.iter().collect();
         let new_id = self.store.gen_id_internal();
 
-        let result =
-            super::kernels::stack(&tensor_refs, axis, new_id).map_err(EngineError::InvalidOp)?;
+        let result = self
+            .backend
+            .stack(ctx, &tensor_refs, axis, new_id)
+            .map_err(EngineError::InvalidOp)?;
 
         let out_id = self.store.insert_existing_tensor(result)?;
         self.names
@@ -853,11 +1143,38 @@ impl DatabaseInstance {
     pub fn eval_column_access(
         &mut self,
         output_name: impl Into<String>,
-        dataset_name: &str,
+        var_or_name: &str,
         column_name: &str,
     ) -> Result<(), EngineError> {
-        // Clone the dataset to avoid borrow issues
-        let dataset = self.get_dataset(dataset_name)?.clone();
+        // 1. Resolve dataset name
+        let ds_name = self
+            .dataset_vars
+            .get(var_or_name)
+            .map(|s| s.as_str())
+            .unwrap_or(var_or_name);
+
+        // 2. Try as tensor-first dataset (Zero-copy path)
+        if let Some(ds) = self.tensor_datasets.get(ds_name) {
+            if let Some(tensor_id) = ds.get_tensor_id(column_name) {
+                // Determine kind (Normal/Strict) - for now default to Normal
+                self.names.insert(
+                    output_name.into(),
+                    NameEntry {
+                        id: tensor_id,
+                        kind: TensorKind::Normal,
+                    },
+                );
+                return Ok(());
+            } else {
+                return Err(EngineError::InvalidOp(format!(
+                    "Column '{}' not found in tensor dataset '{}'",
+                    column_name, ds_name
+                )));
+            }
+        }
+
+        // 3. Try legacy dataset (Materialization path)
+        let dataset = self.get_dataset(ds_name)?.clone();
         let column_values = dataset
             .get_column(column_name)
             .map_err(|e| EngineError::InvalidOp(e))?;

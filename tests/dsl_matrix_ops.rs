@@ -15,7 +15,7 @@ fn test_dsl_vector_syntax() {
 
     let v = db.get("v").unwrap();
     assert_eq!(v.shape.dims, vec![3]);
-    assert_eq!(v.data, vec![1.0, 2.0, 3.0]);
+    assert_eq!(v.data_ref(), vec![1.0, 2.0, 3.0]);
 }
 
 #[test]
@@ -31,7 +31,7 @@ fn test_dsl_matrix_syntax() {
 
     let a = db.get("A").unwrap();
     assert_eq!(a.shape.dims, vec![2, 2]);
-    assert_eq!(a.data, vec![1.0, 2.0, 3.0, 4.0]);
+    assert_eq!(a.data_ref(), vec![1.0, 2.0, 3.0, 4.0]);
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn test_dsl_matrix_3x2() {
 
     let m = db.get("M").unwrap();
     assert_eq!(m.shape.dims, vec![3, 2]);
-    assert_eq!(m.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(m.data_ref(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
 #[test]
@@ -65,7 +65,7 @@ fn test_dsl_matmul() {
     let c = db.get("C").unwrap();
     assert_eq!(c.shape.dims, vec![2, 2]);
     // Expected: [[58, 64], [139, 154]]
-    assert_eq!(c.data, vec![58.0, 64.0, 139.0, 154.0]);
+    assert_eq!(c.data_ref(), vec![58.0, 64.0, 139.0, 154.0]);
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn test_dsl_transpose() {
 
     let a_t = db.get("A_T").unwrap();
     assert_eq!(a_t.shape.dims, vec![3, 2]);
-    assert_eq!(a_t.data, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+    assert_eq!(a_t.data_ref(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn test_dsl_flatten() {
 
     let flat = db.get("flat").unwrap();
     assert_eq!(flat.shape.dims, vec![6]);
-    assert_eq!(flat.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(flat.data_ref(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn test_dsl_reshape() {
 
     let m = db.get("M").unwrap();
     assert_eq!(m.shape.dims, vec![2, 3]);
-    assert_eq!(m.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(m.data_ref(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn test_dsl_vector_operations() {
     execute_script(&mut db, script).unwrap();
 
     let sum = db.get("sum").unwrap();
-    assert_eq!(sum.data, vec![5.0, 7.0, 9.0]);
+    assert_eq!(sum.data_ref(), vec![5.0, 7.0, 9.0]);
 
     let dot = db.get("dot").unwrap();
     assert_eq!(dot.data[0], 32.0); // 1*4 + 2*5 + 3*6 = 32
@@ -208,7 +208,7 @@ fn test_dsl_matmul_with_transpose() {
     let result = db.get("result").unwrap();
     assert_eq!(result.shape.dims, vec![2, 2]);
     // A * A^T where A is 2x3 and A^T is 3x2 = 2x2 result
-    assert_eq!(result.data, vec![14.0, 32.0, 32.0, 77.0]);
+    assert_eq!(result.data_ref(), vec![14.0, 32.0, 32.0, 77.0]);
 }
 
 #[test]

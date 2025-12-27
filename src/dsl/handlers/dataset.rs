@@ -129,8 +129,8 @@ pub fn handle_select(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
 
     // Construct Dataset for Output
     let result_schema = physical_plan.schema();
-    let ds = crate::core::dataset::Dataset::with_rows(
-        crate::core::dataset::DatasetId(0),
+    let ds = crate::core::dataset_legacy::Dataset::with_rows(
+        crate::core::dataset_legacy::DatasetId(0),
         result_schema.clone(),
         result_rows.clone(),
         Some("Query Result".into()),
@@ -1306,4 +1306,50 @@ fn parse_factor(s: &str, line_no: usize) -> Result<Expr, DslError> {
         // Assume column.
         Ok(Expr::Column(s.to_string()))
     }
+}
+
+pub fn handle_add_tensor_column(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
+    // ds.add_column("name", var)
+    let dot_idx = line.find('.').ok_or_else(|| DslError::Parse {
+        line: line_no,
+        msg: "Expected '.' in method call".into(),
+    })?;
+    let ds_name = line[..dot_idx].trim();
+
+    let paren_start = line.find('(').ok_or_else(|| DslError::Parse {
+        line: line_no,
+        msg: "Expected '(' in method call".into(),
+    })?;
+    let paren_end = line.rfind(')').ok_or_else(|| DslError::Parse {
+        line: line_no,
+        msg: "Expected ')' in method call".into(),
+    })?;
+
+    let args_str = &line[paren_start + 1..paren_end];
+    let args: Vec<&str> = args_str.split(',').map(|s| s.trim()).collect();
+
+    if args.len() != 2 {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected 2 arguments: add_column(name, tensor_var)".into(),
+        });
+    }
+
+    let col_name = args[0].trim_matches('"').trim_matches('\'');
+    let tensor_var = args[1];
+
+    db.add_column_to_tensor_dataset(ds_name, col_name, tensor_var)
+        .map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
+
+    Ok(DslOutput::Message(format!(
+        "Added column '{}' to dataset '{}'",
+        col_name, ds_name
+    )))
 }

@@ -17,7 +17,7 @@ fn test_execute_with_context_basic() {
     let tensor = db.get("v1");
     assert!(tensor.is_ok());
     let tensor = tensor.unwrap();
-    assert_eq!(tensor.data, vec![1.0, 2.0, 3.0]);
+    assert_eq!(tensor.data_ref(), vec![1.0, 2.0, 3.0]);
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn test_execute_with_context_multiple_operations() {
 
     // Verify result
     let result = db.get("v3").unwrap();
-    assert_eq!(result.data, vec![5.0, 7.0, 9.0]);
+    assert_eq!(result.data_ref(), vec![5.0, 7.0, 9.0]);
 }
 
 #[test]

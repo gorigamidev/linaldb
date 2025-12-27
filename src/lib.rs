@@ -9,7 +9,9 @@ pub mod server;
 pub mod utils;
 
 // Re-exports replacing legacy modules with core aliases
+// Re-exports replacing legacy modules with core aliases
 pub use core::dataset;
+pub use core::dataset_legacy;
 pub use core::store as dataset_store;
 pub use core::store;
 pub use core::tensor;
@@ -17,7 +19,8 @@ pub use core::tuple;
 pub use core::value;
 
 // Re-exports para tener una API limpia desde fuera del crate
-pub use dataset::{ColumnStats, Dataset, DatasetId, DatasetMetadata};
+pub use dataset::{Dataset as TensorDataset, DatasetRegistry, DatasetSchema};
+pub use dataset_legacy::{ColumnStats, Dataset, DatasetId, DatasetMetadata};
 pub use dataset_store::{DatasetStore, DatasetStoreError};
 pub use dsl::{execute_line, execute_script, DslError};
 pub use engine::{BinaryOp, EngineError, TensorDb, TensorKind, UnaryOp};

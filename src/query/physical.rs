@@ -4,9 +4,12 @@ use crate::engine::TensorDb;
 use std::sync::Arc;
 
 /// Helper function to evaluate lazy columns in a row
-fn evaluate_lazy_columns_in_row(dataset: &crate::core::dataset::Dataset, row: &Tuple) -> Result<Tuple, EngineError> {
+fn evaluate_lazy_columns_in_row(
+    dataset: &crate::core::dataset_legacy::Dataset,
+    row: &Tuple,
+) -> Result<Tuple, EngineError> {
     let mut evaluated_values = row.values.clone();
-    
+
     // Evaluate any lazy columns
     for (i, field) in dataset.schema.fields.iter().enumerate() {
         if field.is_lazy && i < evaluated_values.len() {
@@ -15,9 +18,8 @@ fn evaluate_lazy_columns_in_row(dataset: &crate::core::dataset::Dataset, row: &T
             }
         }
     }
-    
-    Tuple::new(dataset.schema.clone(), evaluated_values)
-        .map_err(|e| EngineError::InvalidOp(e))
+
+    Tuple::new(dataset.schema.clone(), evaluated_values).map_err(|e| EngineError::InvalidOp(e))
 }
 
 /// Trait for physical execution plan nodes
@@ -279,11 +281,11 @@ impl PhysicalPlan for AggregateExec {
         // GroupKey is Vec<Value>
         type GroupKey = Vec<Value>;
         type Accumulators = Vec<Value>; // Accumulator state for SUM, COUNT, MIN, MAX
-        
+
         // Separate tracking for AVG: (sum, count) pairs for each AVG aggregate
         // Indexed by position in aggr_expr
         type AvgAccumulators = Vec<(Value, usize)>; // (sum, count) for AVG
-        
+
         let mut groups: HashMap<GroupKey, (Accumulators, AvgAccumulators)> = HashMap::new();
 
         // 1. Initialize groups
@@ -300,7 +302,7 @@ impl PhysicalPlan for AggregateExec {
                 // Init accumulators
                 let mut regular_accs = Vec::new();
                 let mut avg_accumulators = Vec::new();
-                
+
                 for expr in &self.aggr_expr {
                     match expr {
                         crate::query::logical::Expr::AggregateExpr { func, expr: inner } => {
@@ -362,7 +364,7 @@ impl PhysicalPlan for AggregateExec {
                         }
                     }
                 }
-                
+
                 (regular_accs, avg_accumulators)
             });
 
@@ -418,16 +420,14 @@ impl PhysicalPlan for AggregateExec {
                             // Track sum and count for AVG
                             let (sum_ref, count_ref) = &mut avg_accs[i];
                             *count_ref += 1;
-                            
+
                             // Add to sum - need to handle type conversions
                             match sum_ref {
-                                Value::Float(ref mut sum) => {
-                                    match &val {
-                                        Value::Int(v) => *sum += *v as f32,
-                                        Value::Float(v) => *sum += v,
-                                        _ => {}
-                                    }
-                                }
+                                Value::Float(ref mut sum) => match &val {
+                                    Value::Int(v) => *sum += *v as f32,
+                                    Value::Float(v) => *sum += v,
+                                    _ => {}
+                                },
                                 Value::Int(ref mut sum) => {
                                     match &val {
                                         Value::Int(v) => {
@@ -530,7 +530,7 @@ impl PhysicalPlan for AggregateExec {
         let mut output_rows = Vec::new();
         for (key, (accs, avg_accs)) in groups {
             let mut values = key; // Group keys first
-            
+
             // Build final accumulator values, computing AVG where needed
             let mut final_accs = Vec::new();
             for (i, expr) in self.aggr_expr.iter().enumerate() {
@@ -545,17 +545,11 @@ impl PhysicalPlan for AggregateExec {
                                 Value::Vector(v) => {
                                     Value::Vector(v.iter().map(|x| x / *count as f32).collect())
                                 }
-                                Value::Matrix(m) => {
-                                    Value::Matrix(
-                                        m.iter()
-                                            .map(|row| {
-                                                row.iter()
-                                                    .map(|x| x / *count as f32)
-                                                    .collect()
-                                            })
-                                            .collect()
-                                    )
-                                }
+                                Value::Matrix(m) => Value::Matrix(
+                                    m.iter()
+                                        .map(|row| row.iter().map(|x| x / *count as f32).collect())
+                                        .collect(),
+                                ),
                                 _ => Value::Null,
                             };
                             final_accs.push(avg);
@@ -569,7 +563,7 @@ impl PhysicalPlan for AggregateExec {
                     final_accs.push(accs[i].clone());
                 }
             }
-            
+
             values.extend(final_accs); // Then aggregates
             output_rows.push(
                 Tuple::new(self.schema.clone(), values).map_err(|e| EngineError::InvalidOp(e))?,

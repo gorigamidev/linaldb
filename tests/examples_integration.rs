@@ -20,14 +20,14 @@ fn test_example_vdb_integration() {
     // Verify vectors were created
     let v1 = db.get("v1").expect("v1 should exist");
     assert_eq!(v1.shape.dims, vec![3]);
-    assert_eq!(v1.data, vec![1.0, 2.0, 3.0]);
+    assert_eq!(v1.data_ref(), vec![1.0, 2.0, 3.0]);
     
     let v2 = db.get("v2").expect("v2 should exist");
-    assert_eq!(v2.data, vec![4.0, 5.0, 6.0]);
+    assert_eq!(v2.data_ref(), vec![4.0, 5.0, 6.0]);
     
     // Verify vector addition result
     let v3 = db.get("v3").expect("v3 should exist");
-    assert_eq!(v3.data, vec![5.0, 7.0, 9.0]);
+    assert_eq!(v3.data_ref(), vec![5.0, 7.0, 9.0]);
     
     // Verify similarity was computed
     let sim = db.get("sim").expect("sim should exist");
@@ -36,7 +36,7 @@ fn test_example_vdb_integration() {
     // Verify matrices were created
     let m1 = db.get("m1").expect("m1 should exist");
     assert_eq!(m1.shape.dims, vec![2, 2]);
-    assert_eq!(m1.data, vec![1.0, 2.0, 3.0, 4.0]);
+    assert_eq!(m1.data_ref(), vec![1.0, 2.0, 3.0, 4.0]);
     
     let m2 = db.get("m2").expect("m2 should exist");
     assert_eq!(m2.shape.dims, vec![2, 2]);
@@ -45,12 +45,12 @@ fn test_example_vdb_integration() {
     let m3 = db.get("m3").expect("m3 should exist");
     assert_eq!(m3.shape.dims, vec![2, 2]);
     // m1 * m2 = [[1*5+2*7, 1*6+2*8], [3*5+4*7, 3*6+4*8]] = [[19, 22], [43, 50]]
-    assert_eq!(m3.data, vec![19.0, 22.0, 43.0, 50.0]);
+    assert_eq!(m3.data_ref(), vec![19.0, 22.0, 43.0, 50.0]);
     
     // Verify transpose
     let m3_t = db.get("m3_t").expect("m3_t should exist");
     assert_eq!(m3_t.shape.dims, vec![2, 2]);
-    assert_eq!(m3_t.data, vec![19.0, 43.0, 22.0, 50.0]);
+    assert_eq!(m3_t.data_ref(), vec![19.0, 43.0, 22.0, 50.0]);
     
     // Verify flatten
     let flat = db.get("flat").expect("flat should exist");

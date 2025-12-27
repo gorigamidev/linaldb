@@ -30,7 +30,7 @@ fn test_matmul_basic() {
     // C[0,1] = 1*8 + 2*10 + 3*12 = 8 + 20 + 36 = 64
     // C[1,0] = 4*7 + 5*9 + 6*11 = 28 + 45 + 66 = 139
     // C[1,1] = 4*8 + 5*10 + 6*12 = 32 + 50 + 72 = 154
-    assert_eq!(c.data, vec![58.0, 64.0, 139.0, 154.0]);
+    assert_eq!(c.data_ref(), vec![58.0, 64.0, 139.0, 154.0]);
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn test_transpose() {
     let a_t = transpose(&a, TensorId(2)).unwrap();
 
     assert_eq!(a_t.shape.dims, vec![3, 2]);
-    assert_eq!(a_t.data, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0,]);
+    assert_eq!(a_t.data_ref(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0,]);
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn test_transpose_square() {
     let a_t = transpose(&a, TensorId(2)).unwrap();
 
     assert_eq!(a_t.shape.dims, vec![3, 3]);
-    assert_eq!(a_t.data, vec![1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0,]);
+    assert_eq!(a_t.data_ref(), vec![1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0,]);
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn test_reshape() {
     // Reshape to 3x2
     let reshaped = reshape(&a, Shape::new(vec![3, 2]), TensorId(2)).unwrap();
     assert_eq!(reshaped.shape.dims, vec![3, 2]);
-    assert_eq!(reshaped.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(reshaped.data_ref(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
     // Reshape to 1x6
     let reshaped2 = reshape(&a, Shape::new(vec![1, 6]), TensorId(3)).unwrap();
@@ -115,7 +115,7 @@ fn test_flatten() {
 
     assert_eq!(flat.shape.dims, vec![6]);
     assert_eq!(flat.shape.rank(), 1);
-    assert_eq!(flat.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(flat.data_ref(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn test_slice_vector() {
     let sliced = slice(&v, 0, 1, 4, TensorId(2)).unwrap();
 
     assert_eq!(sliced.shape.dims, vec![3]);
-    assert_eq!(sliced.data, vec![2.0, 3.0, 4.0]);
+    assert_eq!(sliced.data_ref(), vec![2.0, 3.0, 4.0]);
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn test_slice_matrix_rows() {
     let sliced = slice(&m, 0, 1, 3, TensorId(2)).unwrap();
 
     assert_eq!(sliced.shape.dims, vec![2, 2]);
-    assert_eq!(sliced.data, vec![3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(sliced.data_ref(), vec![3.0, 4.0, 5.0, 6.0]);
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn test_slice_matrix_cols() {
     let sliced = slice(&m, 1, 1, 3, TensorId(2)).unwrap();
 
     assert_eq!(sliced.shape.dims, vec![2, 2]);
-    assert_eq!(sliced.data, vec![2.0, 3.0, 5.0, 6.0]);
+    assert_eq!(sliced.data_ref(), vec![2.0, 3.0, 5.0, 6.0]);
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn test_matrix_chain_operations() {
     // [1,2,3] * [1,4]   = 1+4+9 = 14,  1+8+18 = 27
     // [4,5,6]   [2,5]   = 4+10+18 = 32, 16+25+36 = 77
     //           [3,6]
-    assert_eq!(result.data, vec![14.0, 32.0, 32.0, 77.0]);
+    assert_eq!(result.data_ref(), vec![14.0, 32.0, 32.0, 77.0]);
 }
 
 #[test]
@@ -209,5 +209,5 @@ fn test_flatten_then_reshape() {
     // Reshape back to 3x2
     let reshaped = reshape(&flat, Shape::new(vec![3, 2]), TensorId(3)).unwrap();
     assert_eq!(reshaped.shape.dims, vec![3, 2]);
-    assert_eq!(reshaped.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(reshaped.data_ref(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }

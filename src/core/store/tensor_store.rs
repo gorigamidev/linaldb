@@ -66,11 +66,17 @@ impl InMemoryTensorStore {
         Ok(id)
     }
 
-    /// Obtiene referencia a un tensor por ID
     pub fn get(&self, id: TensorId) -> Result<&Tensor, StoreError> {
         self.tensors
             .iter()
             .find(|t| t.id == id)
             .ok_or(StoreError::TensorNotFound(id))
+    }
+
+    /// Removes a tensor by ID. Returns true if it was found and removed.
+    pub fn remove(&mut self, id: TensorId) -> bool {
+        let len_before = self.tensors.len();
+        self.tensors.retain(|t| t.id != id);
+        self.tensors.len() < len_before
     }
 }

@@ -27,13 +27,13 @@ LET a_norm   = NORMALIZE a
 
     let sum = db.get("sum").unwrap();
     assert_eq!(sum.shape.dims, vec![3]);
-    assert_eq!(sum.data, vec![5.0, 7.0, 9.0]);
+    assert_eq!(sum.data_ref(), vec![5.0, 7.0, 9.0]);
 
     let prod = db.get("prod").unwrap();
-    assert_eq!(prod.data, vec![4.0, 10.0, 18.0]);
+    assert_eq!(prod.data_ref(), vec![4.0, 10.0, 18.0]);
 
     let ratio = db.get("ratio").unwrap();
-    assert_eq!(ratio.data, vec![4.0, 2.5, 2.0]);
+    assert_eq!(ratio.data_ref(), vec![4.0, 2.5, 2.0]);
 
     let corr = db.get("corr").unwrap();
     assert_eq!(corr.shape.rank(), 0);

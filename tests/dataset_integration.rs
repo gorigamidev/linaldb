@@ -1,7 +1,7 @@
 // tests/dataset_integration.rs
 
-use std::sync::Arc;
 use linal::{Dataset, DatasetId, Field, Schema, Tuple, Value, ValueType};
+use std::sync::Arc;
 
 #[test]
 fn test_dataset_complete_workflow() {

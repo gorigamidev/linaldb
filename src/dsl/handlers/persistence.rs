@@ -40,17 +40,24 @@ fn handle_save_dataset(
     };
 
     // Get dataset from store using public method
-    let dataset = db.get_dataset(dataset_name).map_err(|e| DslError::Engine {
-        line: line_no,
-        source: e,
-    })?;
+    let dataset = match db.get_dataset(dataset_name) {
+        Ok(ds) => ds.clone(),
+        Err(_) => db
+            .materialize_tensor_dataset(dataset_name)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?,
+    };
 
     // Save using storage engine
     let storage = ParquetStorage::new(&path);
-    storage.save_dataset(dataset).map_err(|e| DslError::Parse {
-        line: line_no,
-        msg: format!("Failed to save dataset: {}", e),
-    })?;
+    storage
+        .save_dataset(&dataset)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Failed to save dataset: {}", e),
+        })?;
 
     Ok(DslOutput::Message(format!(
         "Saved dataset '{}' to '{}'",
@@ -236,7 +243,7 @@ fn handle_load_tensor(
 
     // Insert into db
     // We create a new tensor with a new ID in the current DB, but reuse shape and data
-    db.insert_named(tensor_name, tensor.shape.clone(), tensor.data.clone())
+    db.insert_named(tensor_name, tensor.shape.clone(), (*tensor.data).clone())
         .map_err(|e| DslError::Engine {
             line: line_no,
             source: e,

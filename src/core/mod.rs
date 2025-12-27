@@ -1,5 +1,7 @@
+pub mod backend;
 pub mod config;
 pub mod dataset;
+pub mod dataset_legacy;
 pub mod index;
 pub mod storage;
 pub mod store;

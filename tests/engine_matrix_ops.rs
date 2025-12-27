@@ -1,5 +1,4 @@
-// tests/engine_matrix_ops.rs
-
+use linal::engine::context::ExecutionContext;
 use linal::{Shape, TensorDb};
 
 #[test]
@@ -21,15 +20,18 @@ fn test_engine_matmul() {
     )
     .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // Perform matrix multiplication: C = A * B
-    db.eval_matmul("C", "A", "B").unwrap();
+    db.eval_matmul(&mut ctx, "C", "A", "B").unwrap();
 
     // Verify result
     let c = db.get("C").unwrap();
     assert_eq!(c.shape.dims, vec![2, 2]);
 
     // Expected: [[58, 64], [139, 154]]
-    assert_eq!(c.data, vec![58.0, 64.0, 139.0, 154.0]);
+    assert_eq!(c.data_ref(), vec![58.0, 64.0, 139.0, 154.0]);
 }
 
 #[test]
@@ -44,8 +46,11 @@ fn test_engine_matmul_identity() {
     db.insert_named("I", Shape::new(vec![2, 2]), vec![1.0, 0.0, 0.0, 1.0])
         .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // A * I should equal A
-    db.eval_matmul("result", "A", "I").unwrap();
+    db.eval_matmul(&mut ctx, "result", "A", "I").unwrap();
 
     let result = db.get("result").unwrap();
     let original = db.get("A").unwrap();
@@ -67,8 +72,11 @@ fn test_engine_matmul_dimension_mismatch() {
     db.insert_named("B", Shape::new(vec![2, 2]), vec![1.0, 2.0, 3.0, 4.0])
         .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // This should fail - dimensions don't match
-    let result = db.eval_matmul("C", "A", "B");
+    let result = db.eval_matmul(&mut ctx, "C", "A", "B");
     assert!(result.is_err());
 }
 
@@ -84,12 +92,16 @@ fn test_engine_reshape_basic() {
     )
     .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // Reshape to 3x2
-    db.eval_reshape("B", "A", Shape::new(vec![3, 2])).unwrap();
+    db.eval_reshape(&mut ctx, "B", "A", Shape::new(vec![3, 2]))
+        .unwrap();
 
     let b = db.get("B").unwrap();
     assert_eq!(b.shape.dims, vec![3, 2]);
-    assert_eq!(b.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(b.data_ref(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
 #[test]
@@ -104,13 +116,17 @@ fn test_engine_reshape_to_vector() {
     )
     .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // Reshape to 1D vector
-    db.eval_reshape("V", "M", Shape::new(vec![6])).unwrap();
+    db.eval_reshape(&mut ctx, "V", "M", Shape::new(vec![6]))
+        .unwrap();
 
     let v = db.get("V").unwrap();
     assert_eq!(v.shape.dims, vec![6]);
     assert_eq!(v.shape.rank(), 1);
-    assert_eq!(v.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    assert_eq!(v.data_ref(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 }
 
 #[test]
@@ -125,8 +141,11 @@ fn test_engine_reshape_invalid_size() {
     )
     .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // Try to reshape to incompatible size (2x2 = 4 elements)
-    let result = db.eval_reshape("B", "A", Shape::new(vec![2, 2]));
+    let result = db.eval_reshape(&mut ctx, "B", "A", Shape::new(vec![2, 2]));
     assert!(result.is_err());
 }
 
@@ -144,11 +163,14 @@ fn test_engine_matmul_chain() {
     db.insert_named("C", Shape::new(vec![2, 2]), vec![1.0, 0.0, 0.0, 1.0])
         .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // Compute A * B
-    db.eval_matmul("AB", "A", "B").unwrap();
+    db.eval_matmul(&mut ctx, "AB", "A", "B").unwrap();
 
     // Compute (A * B) * C
-    db.eval_matmul("ABC", "AB", "C").unwrap();
+    db.eval_matmul(&mut ctx, "ABC", "AB", "C").unwrap();
 
     let abc = db.get("ABC").unwrap();
     assert_eq!(abc.shape.dims, vec![2, 2]);
@@ -166,8 +188,12 @@ fn test_engine_reshape_then_matmul() {
     db.insert_named("V", Shape::new(vec![6]), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // Reshape to 2x3 matrix
-    db.eval_reshape("A", "V", Shape::new(vec![2, 3])).unwrap();
+    db.eval_reshape(&mut ctx, "A", "V", Shape::new(vec![2, 3]))
+        .unwrap();
 
     // Create another matrix 3x2
     db.insert_named(
@@ -177,8 +203,11 @@ fn test_engine_reshape_then_matmul() {
     )
     .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // Multiply reshaped matrix
-    db.eval_matmul("C", "A", "B").unwrap();
+    db.eval_matmul(&mut ctx, "C", "A", "B").unwrap();
 
     let c = db.get("C").unwrap();
     assert_eq!(c.shape.dims, vec![2, 2]);
@@ -205,13 +234,16 @@ fn test_engine_strict_mode_matmul() {
     )
     .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // Matmul should work in strict mode
-    db.eval_matmul("C", "A", "B").unwrap();
+    db.eval_matmul(&mut ctx, "C", "A", "B").unwrap();
 
     let c = db.get("C").unwrap();
     assert_eq!(c.shape.dims, vec![2, 2]);
     // Expected: [[19, 22], [43, 50]]
-    assert_eq!(c.data, vec![19.0, 22.0, 43.0, 50.0]);
+    assert_eq!(c.data_ref(), vec![19.0, 22.0, 43.0, 50.0]);
 }
 
 #[test]
@@ -228,23 +260,30 @@ fn test_engine_multiple_reshapes() {
     )
     .unwrap();
 
+    // Create context
+    let mut ctx = ExecutionContext::new();
+
     // Reshape to 3x4
-    db.eval_reshape("M1", "V", Shape::new(vec![3, 4])).unwrap();
+    db.eval_reshape(&mut ctx, "M1", "V", Shape::new(vec![3, 4]))
+        .unwrap();
     let m1 = db.get("M1").unwrap();
     assert_eq!(m1.shape.dims, vec![3, 4]);
 
     // Reshape to 4x3
-    db.eval_reshape("M2", "M1", Shape::new(vec![4, 3])).unwrap();
+    db.eval_reshape(&mut ctx, "M2", "M1", Shape::new(vec![4, 3]))
+        .unwrap();
     let m2 = db.get("M2").unwrap();
     assert_eq!(m2.shape.dims, vec![4, 3]);
 
     // Reshape to 2x6
-    db.eval_reshape("M3", "M2", Shape::new(vec![2, 6])).unwrap();
+    db.eval_reshape(&mut ctx, "M3", "M2", Shape::new(vec![2, 6]))
+        .unwrap();
     let m3 = db.get("M3").unwrap();
     assert_eq!(m3.shape.dims, vec![2, 6]);
 
     // Reshape back to vector
-    db.eval_reshape("V2", "M3", Shape::new(vec![12])).unwrap();
+    db.eval_reshape(&mut ctx, "V2", "M3", Shape::new(vec![12]))
+        .unwrap();
     let v2 = db.get("V2").unwrap();
 
     // Data should be preserved through all reshapes

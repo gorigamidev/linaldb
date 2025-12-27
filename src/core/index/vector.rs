@@ -27,7 +27,7 @@ impl VectorIndex {
             return Err("Data length mismatch".to_string());
         }
 
-        let dot_product: f32 = t1.data.iter().zip(&t2.data).map(|(a, b)| a * b).sum();
+        let dot_product: f32 = t1.data.iter().zip(t2.data.iter()).map(|(a, b)| a * b).sum();
         let norm_t1: f32 = t1.data.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm_t2: f32 = t2.data.iter().map(|x| x * x).sum::<f32>().sqrt();
 

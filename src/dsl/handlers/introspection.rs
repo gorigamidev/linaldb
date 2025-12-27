@@ -157,6 +157,12 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
             return Ok(DslOutput::Table(dataset.clone()));
         }
 
+        // Check if it's a tensor dataset
+        if let Some(ds) = db.get_tensor_dataset(name) {
+            let health_info = db.verify_tensor_dataset(name).unwrap_or_default();
+            return Ok(DslOutput::TensorTable(ds.clone(), health_info));
+        }
+
         return Err(DslError::Engine {
             line: line_no,
             source: crate::engine::EngineError::NameNotFound(name.to_string()),

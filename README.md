@@ -19,7 +19,31 @@ DATASET analytics COLUMNS (
 )
 ```
 
-### 2. Analytical DSL
+### 2. Tensor-First Views (New!)
+
+Create zero-copy dataset views directly from named tensors. Ideal for high-performance machine learning workflows where data already exists as tensors. Use dot notation for direct integration into any mathematical expression.
+
+```sql
+-- Create tensors
+VECTOR prices = [10.0, 20.0, 30.0]
+VECTOR qtys   = [5.0, 10.0, 2.0]
+
+-- Create a zero-copy dataset view
+LET ds = dataset("sales_view")
+ds.add_column("price", prices)
+ds.add_column("quantity", qtys)
+
+-- Direct Math Integration (Symbol Resolution)
+LET revenue = ds.price * ds.quantity
+
+-- Reverse Integration (Add result back to dataset)
+ds.add_column("total", revenue)
+
+-- Materialize & Save to Parquet
+SAVE DATASET sales_view TO "sales.parquet"
+```
+
+### 3. Analytical DSL
 
 Perform complex selection, filtering, and aggregation on all data types.
 

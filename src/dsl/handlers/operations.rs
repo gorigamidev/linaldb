@@ -1,11 +1,27 @@
 use crate::dsl::{DslError, DslOutput};
+use crate::engine::context::ExecutionContext;
 use crate::engine::{BinaryOp, TensorDb, UnaryOp};
 
 /// LET c = ADD a b
 /// LET score = CORRELATE a WITH b
 /// LET sim = SIMILARITY a WITH b
 /// LET half = SCALE a BY 0.5
-pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+pub fn handle_let(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+    ctx: Option<&mut ExecutionContext>,
+) -> Result<DslOutput, DslError> {
+    // If no context provided, create a transient one
+    let mut local_ctx;
+    let ctx = match ctx {
+        Some(c) => c,
+        None => {
+            local_ctx = ExecutionContext::new();
+            &mut local_ctx
+        }
+    };
+
     // Quitamos LET
     let rest = line.trim_start_matches("LET").trim();
     // ... (rest of function body until return) ...
@@ -55,12 +71,15 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             | "TRANSPOSE"
             | "RESHAPE"
             | "STACK"
+            | "SCALE"
+            | "NORMALIZE"
+            | "FLATTEN"
     );
 
     if !is_keyword {
         // Check for infix operator: a + b
         if let Some((left, op, right)) = parse_infix_op(expr) {
-            return handle_infix_op(db, output_name, left, op, right, line_no);
+            return handle_infix_op(db, output_name, left, op, right, line_no, ctx);
         }
 
         // Check for dot notation: name.field
@@ -74,6 +93,25 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
         }
     }
 
+    // Check for constructor functions: dataset("name")
+    if tokens[0].starts_with("dataset(") {
+        let paren_start = tokens[0].find('(').unwrap();
+        let paren_end = tokens[0].rfind(')').ok_or_else(|| DslError::Parse {
+            line: line_no,
+            msg: "Expected ')' in dataset() call".into(),
+        })?;
+        let name = tokens[0][paren_start + 1..paren_end]
+            .trim_matches('"')
+            .trim_matches('\'');
+
+        // Create new tensor dataset
+        let ds = crate::core::dataset::Dataset::new(name);
+        db.register_tensor_dataset(ds.clone());
+        db.register_dataset_var(output_name.to_string(), name.to_string());
+
+        return Ok(DslOutput::TensorTable(ds, Vec::new()));
+    }
+
     match tokens[0] {
         "ADD" => {
             if tokens.len() != 3 {
@@ -84,7 +122,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_binary(output_name, left, right, BinaryOp::Add)
+            db.eval_binary(ctx, output_name, left, right, BinaryOp::Add)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -99,7 +137,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_binary(output_name, left, right, BinaryOp::Subtract)
+            db.eval_binary(ctx, output_name, left, right, BinaryOp::Subtract)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -114,7 +152,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_binary(output_name, left, right, BinaryOp::Multiply)
+            db.eval_binary(ctx, output_name, left, right, BinaryOp::Multiply)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -129,7 +167,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_binary(output_name, left, right, BinaryOp::Divide)
+            db.eval_binary(ctx, output_name, left, right, BinaryOp::Divide)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -145,7 +183,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             }
             let left = tokens[1];
             let right = tokens[3];
-            db.eval_binary(output_name, left, right, BinaryOp::Correlate)
+            db.eval_binary(ctx, output_name, left, right, BinaryOp::Correlate)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -161,7 +199,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             }
             let left = tokens[1];
             let right = tokens[3];
-            db.eval_binary(output_name, left, right, BinaryOp::Similarity)
+            db.eval_binary(ctx, output_name, left, right, BinaryOp::Similarity)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -177,7 +215,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             }
             let left = tokens[1];
             let right = tokens[3];
-            db.eval_binary(output_name, left, right, BinaryOp::Distance)
+            db.eval_binary(ctx, output_name, left, right, BinaryOp::Distance)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -196,7 +234,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
                 line: line_no,
                 msg: format!("Invalid scale factor: {}", tokens[3]),
             })?;
-            db.eval_unary(output_name, input_name, UnaryOp::Scale(factor))
+            db.eval_unary(ctx, output_name, input_name, UnaryOp::Scale(factor))
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -211,7 +249,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
                 });
             }
             let input_name = tokens[1];
-            db.eval_unary(output_name, input_name, UnaryOp::Normalize)
+            db.eval_unary(ctx, output_name, input_name, UnaryOp::Normalize)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -227,7 +265,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_matmul(output_name, left, right)
+            db.eval_matmul(ctx, output_name, left, right)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -264,7 +302,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
                     .map_err(|msg| DslError::Parse { line: line_no, msg })?;
 
                 let shape = crate::core::tensor::Shape::new(dims);
-                db.eval_reshape(output_name, input_name, shape)
+                db.eval_reshape(ctx, output_name, input_name, shape)
                     .map_err(|e| DslError::Engine {
                         line: line_no,
                         source: e,
@@ -285,7 +323,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
                 });
             }
             let input_name = tokens[1];
-            db.eval_unary(output_name, input_name, UnaryOp::Transpose)
+            db.eval_unary(ctx, output_name, input_name, UnaryOp::Transpose)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -304,7 +342,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             // We can resolve checking dims or use a eval_flatten helper if exists.
             // Using eval_reshape requires knowing the size -> need lookup?
             // Does db have eval_flatten? Assuming yes based on engine split.
-            db.eval_unary(output_name, input_name, UnaryOp::Flatten)
+            db.eval_unary(ctx, output_name, input_name, UnaryOp::Flatten)
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -320,7 +358,7 @@ pub fn handle_let(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOu
             }
             // tokens[0] is STACK
             let input_names: Vec<&str> = tokens[1..].to_vec();
-            db.eval_stack(output_name, input_names, 0) // Axis 0 fixed for now
+            db.eval_stack(ctx, output_name, input_names, 0) // Axis 0 fixed for now
                 .map_err(|e| DslError::Engine {
                     line: line_no,
                     source: e,
@@ -464,8 +502,8 @@ fn handle_dot_notation(
     let object_name = parts[0].trim();
     let field_name = parts[1].trim();
 
-    // Try as dataset column access first
-    if db.get_dataset(object_name).is_ok() {
+    // Try as dataset column access first (Legacy or Tensor-First)
+    if db.get_dataset(object_name).is_ok() || db.get_tensor_dataset(object_name).is_some() {
         db.eval_column_access(output_name, object_name, field_name)
             .map_err(|e| DslError::Engine {
                 line: line_no,
@@ -532,9 +570,24 @@ fn evaluate_operand(
     }
 
     // Check if it's dot notation: name.field
+    // But avoid numbers like 1.0
     if expr.contains('.') && !expr.contains('[') {
-        let temp_name = format!("_tmp_{}_{}", base_name, suffix);
-        handle_dot_notation(db, &temp_name, expr, line_no)?;
+        if expr.parse::<f32>().is_err() {
+            let temp_name = format!("_tmp_{}_{}", base_name, suffix);
+            handle_dot_notation(db, &temp_name, expr, line_no)?;
+            return Ok(temp_name);
+        }
+    }
+
+    // Check if it's a numeric literal
+    if let Ok(f) = expr.parse::<f32>() {
+        let temp_name = format!("_tmp_lit_{}_{}", base_name, suffix);
+        let shape = crate::core::tensor::Shape::new(vec![]); // Scalar
+        db.insert_named(&temp_name, shape, vec![f])
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
         return Ok(temp_name);
     }
 
@@ -549,6 +602,7 @@ fn handle_infix_op(
     op: crate::engine::BinaryOp,
     right: &str,
     line_no: usize,
+    ctx: &mut ExecutionContext,
 ) -> Result<DslOutput, DslError> {
     // Generate timestamp-based suffix for uniqueness to avoid collision in tight loops
     let timestamp = std::time::SystemTime::now()
@@ -560,7 +614,7 @@ fn handle_infix_op(
     let right_name =
         evaluate_operand(db, right, output_name, &format!("R_{}", timestamp), line_no)?;
 
-    db.eval_binary(output_name, &left_name, &right_name, op)
+    db.eval_binary(ctx, output_name, &left_name, &right_name, op)
         .map_err(|e| DslError::Engine {
             line: line_no,
             source: e,

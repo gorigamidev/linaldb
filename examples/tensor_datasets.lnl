@@ -1,0 +1,44 @@
+# LINAL Example: Tensor-First Datasets
+# This example demonstrates Phase 3 & 4 capabilities:
+# 1. Creating datasets as zero-copy views over tensors
+# 2. Accessing columns via dot notation
+# 3. Using dataset columns in mathematical expressions
+# 4. Adding derived results back to the dataset
+# 5. Saving and Loading the resulting dataset
+
+# Create some base tensors
+VECTOR prices = [100.0, 200.0, 300.0]
+VECTOR quantities = [5.0, 10.0, 2.0]
+
+# Initialize a new dataset (it doesn't own data, just references it)
+LET ds = dataset("sales_data")
+
+# Add tensors as columns (zero-copy)
+ds.add_column("unit_price", prices)
+ds.add_column("count", quantities)
+
+# Show initial dataset structure
+SHOW ds
+
+# Access columns via dot notation and compute a new tensor
+# Note: 'ds.unit_price' resolves directly to the internal TensorId
+LET total_sales = ds.unit_price * ds.count
+
+# Add the computed result back to the dataset (Reverse Integration)
+ds.add_column("total", total_sales)
+
+# Apply a scalar multiplier (e.g., tax factor 1.1)
+LET with_tax = ds.total * 1.1
+ds.add_column("total_with_tax", with_tax)
+
+# Show the augmented dataset
+SHOW ds
+
+# Save the dataset to Parquet (Materialization happens here)
+SAVE DATASET sales_data TO "sales_analytics.parquet"
+
+# Load it back as a legacy dataset to verify persistence
+LOAD DATASET sales_data FROM "sales_analytics.parquet"
+
+# Show the loaded dataset
+SHOW sales_data

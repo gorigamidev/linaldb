@@ -4,7 +4,7 @@ pub mod handlers;
 
 pub use error::DslError;
 
-use crate::core::dataset::Dataset;
+use crate::core::dataset_legacy::Dataset;
 use crate::core::tensor::Tensor;
 use crate::engine::TensorDb;
 use handlers::{handle_define, handle_let, handle_show};
@@ -15,6 +15,7 @@ pub enum DslOutput {
     None,
     Message(String),
     Table(Dataset),
+    TensorTable(crate::core::dataset::Dataset, Vec<String>),
     Tensor(Tensor),
 }
 
@@ -28,13 +29,37 @@ impl fmt::Display for DslOutput {
             DslOutput::Table(ds) => {
                 writeln!(
                     f,
-                    "Dataset: {} (rows: {}, columns: {})",
+                    "Dataset (Legacy): {} (rows: {}, columns: {})",
                     ds.metadata.name.as_deref().unwrap_or("?"),
                     ds.len(),
                     ds.schema.len()
                 )?;
                 for field in &ds.schema.fields {
                     writeln!(f, "  - {}: {}", field.name, field.value_type)?;
+                }
+                Ok(())
+            }
+            DslOutput::TensorTable(ds, missing_cols) => {
+                writeln!(f, "Dataset (Tensor-First): {}", ds.name)?;
+                if !missing_cols.is_empty() {
+                    writeln!(
+                        f,
+                        "⚠️  HEALTH WARNING: {} columns missing data!",
+                        missing_cols.len()
+                    )?;
+                    for col in missing_cols {
+                        writeln!(
+                            f,
+                            "  [!] Column '{}' depends on a deleted or missing tensor",
+                            col
+                        )?;
+                    }
+                } else {
+                    writeln!(f, "✅ Dataset verified (Zero-Copy)")?;
+                }
+                writeln!(f, "Columns: {}", ds.columns.len())?;
+                for col in &ds.schema.columns {
+                    writeln!(f, "  - {}: {}", col.name, col.value_type)?;
                 }
                 Ok(())
             }
@@ -103,6 +128,16 @@ pub fn execute_script(db: &mut TensorDb, script: &str) -> Result<(), DslError> {
 
 /// Ejecuta una sola línea de DSL
 pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    execute_line_with_context(db, line, line_no, None)
+}
+
+/// Execute a single DSL line with an optional execution context
+pub fn execute_line_with_context(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+    ctx: Option<&mut crate::engine::context::ExecutionContext>,
+) -> Result<DslOutput, DslError> {
     if line.starts_with("DEFINE ") {
         handle_define(db, line, line_no)
     } else if line.starts_with("VECTOR ") {
@@ -110,7 +145,7 @@ pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Dsl
     } else if line.starts_with("MATRIX ") {
         handlers::tensor::handle_matrix(db, line, line_no)
     } else if line.starts_with("LET ") {
-        handle_let(db, line, line_no)
+        handle_let(db, line, line_no, ctx)
     } else if line.starts_with("SHOW ") {
         handle_show(db, line, line_no)
     } else if line.starts_with("SELECT ") {
@@ -126,6 +161,8 @@ pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Dsl
         handlers::explain::handle_explain(db, line, line_no)
     } else if line.starts_with("MATERIALIZE ") {
         handlers::dataset::handle_materialize(db, line, line_no)
+    } else if line.contains(".add_column(") {
+        handlers::dataset::handle_add_tensor_column(db, line, line_no)
     } else if line.starts_with("CREATE ") {
         // Check for CREATE DATABASE
         if line.starts_with("CREATE DATABASE ") {

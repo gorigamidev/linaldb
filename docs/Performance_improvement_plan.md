@@ -85,7 +85,7 @@ Recommended crates:
 - `bumpalo`
 - or a custom simple arena
 
-**Benefits**
+### *Benefits*
 
 - O(1) allocation
 - No fragmentation
@@ -127,7 +127,7 @@ Move from tuple-at-a-time execution to batch-based execution:
 - Process rows in chunks (e.g. 1024 rows).
 - Apply filters, projections, and aggregations per batch.
 
-**Benefits**
+### *Benefits 2*
 
 - Better CPU cache utilization
 - Lower function call overhead
@@ -271,7 +271,7 @@ Track:
 > Each phase must be implemented incrementally with backward compatibility.
 > New features should be **additive**, not replacements, until proven stable.
 
-### Phase 0 – Measurement & Baseline (CRITICAL FIRST STEP)
+### Phase 0 – Measurement & Baseline (COMPLETED)
 
 **Goal**: Establish performance baselines before any optimization.
 
@@ -310,7 +310,7 @@ Track:
 
 ---
 
-### Phase 1 – Non-Breaking Foundations
+### Phase 1 – Non-Breaking Foundations (COMPLETED)
 
 **Goal**: Add new infrastructure without replacing existing code.
 
@@ -439,7 +439,7 @@ impl Tensor {
 
 ---
 
-### Phase 2 – Tensor Zero-Copy Migration
+### Phase 2 – Tensor Zero-Copy Migration (COMPLETED)
 
 **Goal**: Fully migrate to Arc-based tensor sharing.
 
@@ -931,5 +931,3 @@ This plan intentionally favors **predictability and correctness first**, then
 throughput and scale.
 
 Rust’s strengths are fully leveraged when **lifetimes and scopes are explicit**.
-
-```
