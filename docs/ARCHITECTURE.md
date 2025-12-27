@@ -31,17 +31,17 @@ The engine is built in Rust with a modular architecture that separates concerns 
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Application Layer                      │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
-│  │   CLI    │  │  Server  │  │   REPL    │  │  Scripts │ │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘ │
+┌──────────────────────────────────────────────────────────┐
+│                      Application Layer                   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
+│  │   CLI    │  │  Server  │  │   REPL   │  │  Scripts │  │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  │
 └───────┼─────────────┼─────────────┼─────────────┼────────┘
         │             │             │             │
         └─────────────┴─────────────┴─────────────┘
                            │
         ┌──────────────────┴──────────────────┐
-        │          DSL Layer (Parser)          │
+        │          DSL Layer (Parser)         │
         │  ┌──────────────────────────────┐   │
         │  │  Command Parsing & Routing   │   │
         │  │  Expression Evaluation       │   │
@@ -50,10 +50,10 @@ The engine is built in Rust with a modular architecture that separates concerns 
         └──────────────────┬──────────────────┘
                            │
         ┌──────────────────┴──────────────────┐
-        │       Query Planning & Execution     │
+        │       Query Planning & Execution    │
         │  ┌──────────────┐  ┌──────────────┐ │
-        │  │   Logical    │→ │   Physical    │ │
-        │  │    Plan      │  │    Plan       │ │
+        │  │   Logical    │→ │   Physical   │ │
+        │  │    Plan      │  │    Plan      │ │
         │  └──────────────┘  └──────────────┘ │
         │  ┌──────────────────────────────┐   │
         │  │      Query Optimizer         │   │
@@ -63,10 +63,10 @@ The engine is built in Rust with a modular architecture that separates concerns 
         └──────────────────┬──────────────────┘
                            │
         ┌──────────────────┴──────────────────┐
-        │         Engine Layer (TensorDb)      │
+        │         Engine Layer (TensorDb)     │
         │  ┌──────────────────────────────┐   │
         │  │   Database Instance Mgmt     │   │
-        │  │   - Multi-database support    │   │
+        │  │   - Multi-database support   │   │
         │  │   - Context switching        │   │
         │  └──────────────────────────────┘   │
         └──────────────────┬──────────────────┘
@@ -78,16 +78,16 @@ The engine is built in Rust with a modular architecture that separates concerns 
         │  │   Store      │  │   Store      │ │
         │  └──────────────┘  └──────────────┘ │
         │  ┌──────────────┐  ┌──────────────┐ │
-        │  │   Hash      │  │   Vector     │ │
-        │  │   Index     │  │   Index      │ │
+        │  │   Hash      │  │   Vector      │ │
+        │  │   Index     │  │   Index       │ │
         │  └──────────────┘  └──────────────┘ │
         └──────────────────┬──────────────────┘
                            │
         ┌──────────────────┴──────────────────┐
-        │        Persistence Layer             │
+        │        Persistence Layer            │
         │  ┌──────────────┐  ┌──────────────┐ │
         │  │   Parquet    │  │     JSON     │ │
-        │  │  (Datasets)  │  │   (Tensors)   │ │
+        │  │  (Datasets)  │  │   (Tensors)  │ │
         │  └──────────────┘  └──────────────┘ │
         └─────────────────────────────────────┘
 ```
