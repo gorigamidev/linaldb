@@ -14,6 +14,17 @@ fn elementwise_binary_op(
     neutral_b: f32,
     op: impl Fn(f32, f32) -> Result<f32, String>,
 ) -> Result<Tensor, String> {
+    if a.shape == b.shape {
+        let len = a.len();
+        let mut data = Vec::with_capacity(len);
+        let a_data = a.data_ref();
+        let b_data = b.data_ref();
+        for i in 0..len {
+            data.push(op(a_data[i], b_data[i])?);
+        }
+        return Tensor::new(new_id, a.shape.clone(), data);
+    }
+
     match (a.shape.rank(), b.shape.rank()) {
         // Escalar con cualquier shape (broadcast)
         (0, _) => {
@@ -60,15 +71,6 @@ fn elementwise_binary_op(
 
             let shape = Shape::new(vec![len]);
             Tensor::new(new_id, shape, data)
-        }
-        // Si los shapes son idénticos (ej: Matrix + Matrix), operar elemento a elemento
-        _ if a.shape == b.shape => {
-            let len = a.len();
-            let mut data = Vec::with_capacity(len);
-            for i in 0..len {
-                data.push(op(a.data_ref()[i], b.data_ref()[i])?);
-            }
-            Tensor::new(new_id, a.shape.clone(), data)
         }
         // Otros casos: de momento, error
         _ => Err(format!(
