@@ -7,7 +7,7 @@ This report summarizes the performance impact of the Tensor-First Dataset implem
 Datasets are now implemented as lightweight views. Operations that establish these views are extremely fast:
 
 | Operation | Time | Notes |
-|:---|:---|:---|
+| :--- | :--- | :--- |
 | `LET ds = dataset('name')` | ~385 ns | Pure metadata allocation |
 | `ds.add_column('col', var)` | ~300 ns | Symbol reference only |
 
@@ -16,7 +16,7 @@ Datasets are now implemented as lightweight views. Operations that establish the
 Accessing columns via dot notation (`ds.column`) involves symbol resolution in the DSL.
 
 | Access Type | Tooling | Time | Overhead |
-|:---|:---|:---|:---|
+| :--- | :--- | :--- | :--- |
 | Direct Variable | `LET x = v1 * 2.0` | ~147 µs | Baseline |
 | Dataset Column | `LET x = ds.col1 * 2.0` | ~228 µs | +81 µs |
 
@@ -29,14 +29,14 @@ To recover performance regressed by new broadcasting logic, we implemented a **F
 ### Results (Vector Multiplication)
 
 | Size | Before Opt (µs) | After Opt (µs) | Improvement |
-|:---|:---|:---|:---|
+| :--- | :--- | :--- | :--- |
 | 128 | 0.733 | 0.686 | **6.4%** |
 | 512 | 1.090 | 0.951 | **12.7%** |
 
 ### Results (Vector Addition)
 
 | Size | Before Opt (µs) | After Opt (µs) | Improvement |
-|:---|:---|:---|:---|
+| :--- | :--- | :--- | :--- |
 | 128 | 0.459 | 0.436 | **5.0%** |
 | 512 | 0.818 | 0.695 | **15.0%** |
 

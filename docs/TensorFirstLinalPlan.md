@@ -31,7 +31,7 @@ Enable **datasets as first-class runtime objects** that:
 
 Add a new core module:
 
-```
+```text
 
 src/core/dataset/
 ├── dataset.rs
