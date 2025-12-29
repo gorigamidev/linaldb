@@ -165,7 +165,7 @@ LINAL now supports declarative resource management and built-in execution lineag
 
 Every tensor created via `DERIVE` or `LET` automatically tracks its origin, operation, and input IDs. This metadata is persistent and can be inspected to audit analytical workflows.
 
-### 8. Introspection & Data Health (New!)
+### 8. Introspection & Data Health
 
 LINAL provides advanced tools to audit your analytical pipelines and trace data provenance.
 
