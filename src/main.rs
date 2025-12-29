@@ -53,6 +53,35 @@ enum Commands {
         /// Target dataset name
         dataset: String,
     },
+    /// Manage database instances
+    Db {
+        #[command(subcommand)]
+        action: DbAction,
+    },
+    /// Run a query against a local or remote LINAL instance
+    Query {
+        /// The DSL command to execute
+        dsl: String,
+        /// Remote server URL (optional, e.g., http://localhost:8080)
+        #[arg(long)]
+        url: Option<String>,
+        /// Database name to use
+        #[arg(long, short)]
+        db: Option<String>,
+        /// Output format (display or toon)
+        #[arg(long, default_value = "display")]
+        format: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DbAction {
+    /// List all databases
+    List,
+    /// Create a new database
+    Create { name: String },
+    /// Drop a database
+    Drop { name: String },
 }
 
 #[tokio::main]
@@ -134,6 +163,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Commands::Load { file, dataset }) => {
             handle_load(&mut db, &file, &dataset)?;
         }
+        Some(Commands::Db { action }) => {
+            handle_db(&mut db, action)?;
+        }
+        Some(Commands::Query {
+            dsl,
+            url,
+            db: target_db,
+            format,
+        }) => {
+            handle_query(&mut db, dsl, url, target_db, format == "toon").await?;
+        }
         Some(Commands::Repl { format }) => {
             run_repl(db, format == "toon")?;
         }
@@ -212,8 +252,13 @@ fn run_repl(mut db: TensorDb, use_toon: bool) -> Result<(), Box<dyn std::error::
     let mut paren_balance = 0;
 
     loop {
-        let prompt = if paren_balance == 0 { ">_>  " } else { " ..  " };
-        let readline = rl.readline(prompt);
+        let active_db = db.active_db();
+        let prompt = if paren_balance == 0 {
+            format!("{} >_>  ", active_db.blue())
+        } else {
+            " ..  ".to_string()
+        };
+        let readline = rl.readline(&prompt);
 
         match readline {
             Ok(line) => {
@@ -224,6 +269,16 @@ fn run_repl(mut db: TensorDb, use_toon: bool) -> Result<(), Box<dyn std::error::
 
                 if trimmed.eq_ignore_ascii_case("EXIT") {
                     break;
+                }
+
+                // Handle meta-commands
+                if trimmed.starts_with(".use ") {
+                    let new_db = trimmed.strip_prefix(".use ").unwrap().trim();
+                    match db.use_database(new_db) {
+                        Ok(_) => println!("Switched to database: {}", new_db.green()),
+                        Err(e) => eprintln!("{}: {}", "Error".red(), e),
+                    }
+                    continue;
                 }
 
                 rl.add_history_entry(trimmed)?;
@@ -278,5 +333,79 @@ fn run_repl(mut db: TensorDb, use_toon: bool) -> Result<(), Box<dyn std::error::
     }
 
     let _ = rl.save_history(history_path);
+    Ok(())
+}
+
+fn handle_db(db: &mut TensorDb, action: DbAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        DbAction::List => {
+            let dbs = db.list_databases();
+            println!("{}", "Databases:".bold().blue());
+            for name in dbs {
+                println!("  - {}", name.cyan());
+            }
+        }
+        DbAction::Create { name } => {
+            db.create_database(name.clone())?;
+            println!("{} Database '{}' created.", "✓".green(), name.bold());
+        }
+        DbAction::Drop { name } => {
+            db.drop_database(&name)?;
+            println!("{} Database '{}' dropped.", "✓".yellow(), name.bold());
+        }
+    }
+    Ok(())
+}
+
+async fn handle_query(
+    db: &mut TensorDb,
+    dsl: String,
+    url: Option<String>,
+    target_db: Option<String>,
+    use_toon: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(server_url) = url {
+        let client = reqwest::Client::new();
+        let mut req = client.post(format!("{}/execute", server_url)).body(dsl);
+
+        if let Some(db_name) = target_db {
+            req = req.header("X-Linal-Database", db_name);
+        }
+
+        if use_toon {
+            req = req.query(&[("format", "toon")]);
+        } else {
+            req = req.query(&[("format", "json")]);
+        }
+
+        let resp = req.send().await?;
+        let status = resp.status();
+        let body = resp.text().await?;
+
+        if status.is_success() {
+            println!("{}", body);
+        } else {
+            eprintln!("{} Remote error ({}): {}", "✗".red(), status, body.red());
+        }
+    } else {
+        if let Some(db_name) = target_db {
+            db.use_database(&db_name)?;
+        }
+        match execute_line(db, &dsl, 1) {
+            Ok(output) => {
+                if !matches!(output, DslOutput::None) {
+                    if use_toon {
+                        let toon = encode_default(&output)?;
+                        println!("{}", toon);
+                    } else {
+                        println!("{}", output);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("{}: {}", "Error".red(), e);
+            }
+        }
+    }
     Ok(())
 }

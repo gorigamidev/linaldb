@@ -14,6 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] Python/WASM integration
 - [ ] Native ML operators (KNN, clustering, PCA)
 
+## [0.1.9] - 2025-12-29
+
+### Added
+
+- **Phase 6: Usability Hardening (Managed Service)**
+  - **Managed Instances**: Integrated database lifecycle API (`/databases`) and CLI (`linal db`) for persistent instance management.
+  - **Server Multitenancy**: Support for `X-Linal-Database` header to isolate execution contexts within a single server.
+  - **Background Scheduler**: In-memory task scheduler for periodic DSL execution and automated analytical pipelines.
+  - **Remote Execution Mode**: CLI `query` command now supports `--url` to act as a client for remote LINAL servers.
+  - **Context-Aware REPL**: Shell prompt now displays active database and supports `.use <db>` meta-command.
+
+- **Phase 5: Internal Consistency & Validation**
+  - **Lineage Introspection**: `SHOW LINEAGE <tensor>` provides a recursive tree view of data provenance.
+  - **Deep Resource Auditing**: `AUDIT DATASET <name>` verifies integrity of zero-copy reference graphs.
+  - **Diagnostic Exports**: Added `LineageNode` to public engine API for external tool integration.
+  - **Enhanced Displays**: Improved tensor formatting in DSL output including source op and creation time.
+
 ## [0.1.8] - 2025-12-29
 
 ### Added
@@ -377,7 +394,8 @@ LINAL is positioned as:
 
 ---
 
-[Unreleased]: https://github.com/gorigami/linal/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/gorigami/linal/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/gorigami/linal/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/gorigami/linal/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/gorigami/linal/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/gorigami/linal/compare/v0.1.5...v0.1.6

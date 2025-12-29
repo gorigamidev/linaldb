@@ -383,6 +383,15 @@ impl TensorDb {
                 name
             )));
         }
+
+        // Create directory for persistence
+        let db_path = self.config.storage.data_dir.join(&name);
+        if !db_path.exists() {
+            std::fs::create_dir_all(&db_path).map_err(|e| {
+                EngineError::InvalidOp(format!("Failed to create DB directory: {}", e))
+            })?;
+        }
+
         self.databases
             .insert(name.clone(), DatabaseInstance::new(name));
         Ok(())
@@ -400,6 +409,11 @@ impl TensorDb {
         Ok(())
     }
 
+    /// Get active database name
+    pub fn active_db(&self) -> &str {
+        &self.active_db
+    }
+
     /// Drop a database
     pub fn drop_database(&mut self, name: &str) -> Result<(), EngineError> {
         if name == "default" {
@@ -413,10 +427,21 @@ impl TensorDb {
                 name
             )));
         }
+
+        // Remove from memory
         if self.active_db == name {
             self.active_db = "default".to_string();
         }
         self.databases.remove(name);
+
+        // Remove from disk
+        let db_path = self.config.storage.data_dir.join(name);
+        if db_path.exists() {
+            std::fs::remove_dir_all(&db_path).map_err(|e| {
+                EngineError::InvalidOp(format!("Failed to remove DB directory: {}", e))
+            })?;
+        }
+
         Ok(())
     }
 

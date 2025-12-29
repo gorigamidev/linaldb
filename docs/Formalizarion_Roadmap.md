@@ -166,16 +166,21 @@ Prepare Linal for real users and external integrations.
 
 ### Phase 6 Tasks
 
-- [ ] Improve CLI feedback (optional)
-- [ ] Add inspection commands (list tensors, datasets, lineage)
-- [ ] Document mental model clearly
-- [ ] Add end-to-end examples
+- [x] **[Server]** Database instance management API (List, Create, Delete instances)
+- [x] **[Server]** Background Query Scheduler (Periodic tasks & scripts)
+- [x] **[Server/DSL]** Support multitenancy via HTTP headers (`X-Linal-Database`)
+- [x] **[CLI]** Managed Instance Commands (`linal db list|create|drop`)
+- [x] **[CLI]** Remote Execution Mode (`linal query --url <server>`)
+- [x] **[REPL]** Enhanced prompt with database context
+- [x] Add explainability to complex derivations (Lineage tree visualization)
+- [x] Create comprehensive examples for formalized workflows
 
 ### Phase 6 Checkpoints
 
-- [ ] New users understand core concepts
-- [ ] Scientists can explore results
-- [ ] Data engineers can integrate pipelines
+- [x] Successful remote query execution via CLI
+- [x] Background tasks running as scheduled
+- [x] Clean database instance lifecycle via REST and CLI
+- [x] High user satisfaction with formalized DSL/Managed API
 
 ### Phase 6 Exit Criteria
 

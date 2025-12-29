@@ -1,0 +1,29 @@
+// LINAL Phase 6 Demo: Managed Service & Usability
+// ------------------------------------------------
+// This script demonstrates the formalized workflow for a data scientist.
+
+// 1. Define base datasets
+VECTOR x = [1, 2, 3, 4, 5]
+VECTOR weights = [0.1, 0.2, 0.3, 0.4, 0.5]
+
+// 2. Perform a derivation
+LET weighted_sum = x * weights
+
+// 3. Introspect the derivation (New in Phase 6/5)
+SHOW LINEAGE weighted_sum
+
+// 4. Data Integrity Audit (using a Tensor-Dataset)
+LET results = dataset("analysis_results")
+ATTACH weighted_sum TO results.output
+AUDIT DATASET results
+
+// 5. Managed Service Context (Instructional)
+// To run this on a remote server:
+//   linal query "SHOW LINEAGE weighted_sum" --url http://localhost:8080 --db production
+
+// To switch databases in the REPL:
+//   .use staging
+//   VECTOR v = [9, 9, 9]
+
+// 6. Verification of the derived tensor
+SHOW weighted_sum

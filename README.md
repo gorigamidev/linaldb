@@ -181,6 +181,17 @@ SHOW LINEAGE result
 AUDIT DATASET diagnostics
 ```
 
+### 9. Managed Service & Hardening
+
+LINAL has evolved from a local-only tool into a **Managed Analytical Service**.
+
+* **Managed Instances**: Create, list, and drop isolated database instances via CLI or REST.
+* **Multitenancy**: Shared infrastructure with per-request database context isolation via `X-Linal-Database` header.
+* **Background Scheduler**: Automate your analytical pipelines with periodic execution of DSL commands.
+* **Remote CLI Mode**: Connect to remote LINAL servers directly from the command line.
+
+---
+
 ## Multi-Paradigm Access
 
 LINAL provides a unified interface across all access methods.
@@ -227,12 +238,22 @@ cargo run -- server --port 8080
 # TOON response (default)
 curl -X POST "http://localhost:8080/execute" \
   -H "Content-Type: text/plain" \
+  -H "X-Linal-Database: production" \
   -d "VECTOR v = [1, 2, 3]"
 
 # JSON response (opt-in)
 curl -X POST "http://localhost:8080/execute?format=json" \
   -H "Content-Type: text/plain" \
   -d "SHOW v"
+
+# Database Management
+curl -X POST "http://localhost:8080/databases/new_db"
+curl -X GET "http://localhost:8080/databases"
+
+# Query Scheduling
+curl -X POST "http://localhost:8080/schedule" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "auto_save", "command": "SAVE ALL", "interval_secs": 60}'
 ```
 
 *Response Formats:*
@@ -243,6 +264,16 @@ curl -X POST "http://localhost:8080/execute?format=json" \
 ---
 
 ## Recent Features
+
+### Managed Service & Usability (v0.1.9)
+
+Phase 6 turned LINAL into a professional-grade analytical service:
+
+* **`linal db <cmd>`**: New CLI subcommands for instance lifecycle management.
+* **`linal query --url`**: Remote execution mode for connecting to central servers.
+* **Multitenant Server**: Database isolation via HTTP headers.
+* **Background Scheduler**: Periodic task execution within the server.
+* **Context-Aware Shell**: REPL prompt now shows active database name and supports `.use <db>`.
 
 ### Introspection & Consistency (v0.1.8)
 
