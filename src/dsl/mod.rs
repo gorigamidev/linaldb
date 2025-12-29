@@ -63,7 +63,20 @@ impl fmt::Display for DslOutput {
                 }
                 Ok(())
             }
-            DslOutput::Tensor(t) => write!(f, "Tensor: {:?} values: {:?}", t.shape, t.data), // simplified
+            DslOutput::Tensor(t) => {
+                writeln!(f, "Tensor ID: {}", t.id.0)?;
+                writeln!(f, "Created: {}", t.metadata.created_at)?;
+                if let Some(lineage) = &t.metadata.lineage {
+                    writeln!(f, "Source Op: {}", lineage.operation)?;
+                }
+                writeln!(f, "Shape: {:?}", t.shape.dims)?;
+                if t.data.len() > 10 {
+                    writeln!(f, "Data: {:?}... (total {})", &t.data[..10], t.data.len())?;
+                } else {
+                    writeln!(f, "Data: {:?}", t.data)?;
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -163,8 +176,9 @@ pub fn execute_line_with_context(
     } else if line.starts_with("SEARCH ") {
         handlers::search::handle_search(db, line, line_no)
     } else if line.starts_with("EXPLAIN ") {
-        // Added EXPLAIN routing
         handlers::explain::handle_explain(db, line, line_no)
+    } else if line.starts_with("AUDIT ") {
+        handlers::audit::handle_audit(db, line, line_no)
     } else if line.starts_with("MATERIALIZE ") {
         handlers::dataset::handle_materialize(db, line, line_no)
     } else if line.contains(".add_column(") {

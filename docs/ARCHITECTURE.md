@@ -11,7 +11,9 @@ This document provides a comprehensive overview of the LINAL engine architecture
 5. [Storage Layer](#storage-layer)
 6. [Query Processing](#query-processing)
 7. [Type System](#type-system)
-8. [Design Principles](#design-principles)
+8. [Lineage & Provenance](#lineage--provenance)
+9. [Consistency & Auditing](#consistency--auditing)
+10. [Design Principles](#design-principles)
 
 ---
 
@@ -103,8 +105,10 @@ The core module contains fundamental data structures and abstractions:
 #### `tensor.rs`
 
 - **Tensor**: Multi-dimensional array with shape `[d1, d2, ..., dn]` and f32 data
-- **TensorId**: Unique identifier for tensors
-- **Shape**: Dimension specification supporting scalars, vectors, matrices, and higher-order tensors
+- **TensorId**: Unique identifier for tensors.
+- **ExecutionId**: Unique identifier for an execution/query session.
+- **Lineage**: Information about how a tensor was derived (operation, inputs, execution ID).
+- **Shape**: Dimension specification supporting scalars, vectors, matrices, and higher-order tensors.
 
 #### `value.rs`
 
@@ -204,7 +208,9 @@ Command-specific handlers:
 - **instance.rs**: CREATE DATABASE, USE, DROP DATABASE
 - **metadata.rs**: SET DATASET METADATA
 - **explain.rs**: EXPLAIN, EXPLAIN PLAN
-- **introspection.rs**: SHOW commands
+- **introspection.rs**: SHOW commands (SCHEMA, INDEXES, LINEAGE)
+- **semantics.rs**: Explicit resource handlers (BIND, ATTACH, DERIVE)
+- **audit.rs**: Consistency checking (AUDIT DATASET)
 
 #### 3.1 `error.rs`
 
@@ -413,6 +419,26 @@ Value
 - Compile-time type checking in expressions
 - Runtime validation for dataset operations
 - Clear error messages for type mismatches
+
+---
+
+## Lineage & Provenance
+
+LINAL implements a robust **Lineage Tracking** system that ensures every derived tensor carries its computational history.
+
+- **Persistent Provenance**: Lineage metadata (Source Operation, Input Tensor IDs, Execution Context) is serialized alongside the tensor data.
+- **Audit Trails**: Users can trace any final result back to its root "ground-truth" tensors using the `SHOW LINEAGE` command.
+- **Traceability**: Every execution batch is assigned a unique `ExecutionId`, allowing auditors to group related operations.
+
+---
+
+## Consistency & Auditing
+
+As LINAL moves toward a "Reference Graph" model for data, the engine provides tools to maintain structural integrity.
+
+- **Reference Validation**: The `AUDIT DATASET` command performs a deep scan of the Reference Graph, verifying that all terminal nodes (Tensor IDs) exist in the store.
+- **Dangling Reference Detection**: Identifies dataset columns that point to deleted or missing tensors.
+- **Self-Healing Diagnostics**: The `SHOW` command for Tensor-First datasets automatically triggers a sanity check, providing visual warnings if the dataset is in an "unhealthy" state.
 
 ---
 

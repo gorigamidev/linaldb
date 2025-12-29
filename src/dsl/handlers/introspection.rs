@@ -97,6 +97,16 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
         }
 
         Ok(DslOutput::Message(output))
+    } else if rest.starts_with("LINEAGE ") {
+        let name = rest.trim_start_matches("LINEAGE ").trim();
+        let tree = db.get_lineage_tree(name).map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
+
+        let mut output = format!("Lineage for tensor '{}':\n", name);
+        output.push_str(&format_lineage_tree(&tree, 0));
+        Ok(DslOutput::Message(output))
     } else if rest.starts_with("SHAPE ") {
         let name = rest.trim_start_matches("SHAPE ").trim();
         let t = db.get(name).map_err(|e| DslError::Engine {
@@ -168,4 +178,26 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
             source: crate::engine::EngineError::NameNotFound(name.to_string()),
         });
     }
+}
+
+fn format_lineage_tree(node: &crate::engine::LineageNode, indent: usize) -> String {
+    let mut out = String::new();
+    let indent_str = "  ".repeat(indent);
+
+    let name_part = if let Some(name) = &node.name {
+        format!(" ({})", name)
+    } else {
+        String::new()
+    };
+
+    out.push_str(&format!(
+        "{}{}{} [{}]\n",
+        indent_str, node.operation, name_part, node.tensor_id.0
+    ));
+
+    for input in &node.inputs {
+        out.push_str(&format_lineage_tree(input, indent + 1));
+    }
+
+    out
 }

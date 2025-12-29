@@ -165,6 +165,22 @@ LINAL now supports declarative resource management and built-in execution lineag
 
 Every tensor created via `DERIVE` or `LET` automatically tracks its origin, operation, and input IDs. This metadata is persistent and can be inspected to audit analytical workflows.
 
+### 8. Introspection & Data Health (New!)
+
+LINAL provides advanced tools to audit your analytical pipelines and trace data provenance.
+
+* **SHOW LINEAGE**: Visualize the full recursive "ancestry" of any tensor.
+* **AUDIT DATASET**: Deep validation of zero-copy Reference Graphs to ensure all data dependencies are healthy.
+* **Engine Warnings**: Automatic detection of dangling references in datasets.
+
+```sql
+-- Trace where 'result' came from
+SHOW LINEAGE result
+
+-- Audit dataset health
+AUDIT DATASET diagnostics
+```
+
 ## Multi-Paradigm Access
 
 LINAL provides a unified interface across all access methods.
@@ -228,13 +244,14 @@ curl -X POST "http://localhost:8080/execute?format=json" \
 
 ## Recent Features
 
-### DSL Semantic Expansion & Lineage (v0.1.7)
+### Introspection & Consistency (v0.1.8)
 
-Introduction of formal semantics to improve legibility and traceability:
+LINAL is now a fully introspectable engine with formal diagnostic tools:
 
-* **Declarative Keywords**: Added `BIND`, `ATTACH`, and `DERIVE` for explicit resource handling.
-* **Lineage Tracking**: Automatic recording of tensor derivation history (Phase 3 & 4 of formalization roadmap).
-* **Persistent Provenance**: Lineage metadata is serialized/deserialized ensuring audits survive database restarts.
+* **`SHOW LINEAGE`**: Recursive ancestry reporting for derived tensors.
+* **`AUDIT DATASET`**: Formal integrity verification for Reference Graphs.
+* **Improved Diagnostics**: Enhanced `SHOW` output for tensors, including creation timestamps and source operations.
+* **Reference Persistence**: Full serialization of execution provenance (Phase 5 of formalization roadmap).
 
 ### CLI & Server Hardening (v0.1.4 - LINAL)
 
@@ -415,6 +432,9 @@ cargo run -- run examples/end_to_end.lnl
 
 # Performance benchmark
 cargo run -- run examples/benchmark.lnl
+
+# Introspection & Auditing demo
+cargo run -- run examples/introspection_demo.lnl
 ```
 
 ### Interactive REPL

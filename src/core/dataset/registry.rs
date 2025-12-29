@@ -40,4 +40,8 @@ impl DatasetRegistry {
     pub fn list_names(&self) -> Vec<String> {
         self.datasets.keys().cloned().collect()
     }
+
+    pub fn datasets(&self) -> &HashMap<String, Dataset> {
+        &self.datasets
+    }
 }

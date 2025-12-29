@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -13,6 +14,14 @@ use crate::engine::context::ExecutionContext;
 struct NameEntry {
     id: TensorId,
     kind: TensorKind,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LineageNode {
+    pub tensor_id: TensorId,
+    pub name: Option<String>,
+    pub operation: String,
+    pub inputs: Vec<LineageNode>,
 }
 
 /// Individual database instance containing its own stores and name mappings
@@ -481,6 +490,10 @@ impl TensorDb {
         self.active_instance().verify_tensor_dataset(ds_name_or_var)
     }
 
+    pub fn get_lineage_tree(&self, name: &str) -> Result<LineageNode, EngineError> {
+        self.active_instance().get_lineage_tree(name)
+    }
+
     pub fn remove_tensor(&mut self, name: &str) -> bool {
         self.active_instance_mut().remove_tensor(name)
     }
@@ -797,6 +810,60 @@ impl DatabaseInstance {
         }
 
         Err(EngineError::NameNotFound(source.to_string()))
+    }
+
+    pub fn get_lineage_tree(&self, name: &str) -> Result<LineageNode, EngineError> {
+        let entry = self
+            .names
+            .get(name)
+            .ok_or_else(|| EngineError::NameNotFound(name.to_string()))?;
+        self.resolve_lineage_node(entry.id, Some(name.to_string()))
+    }
+
+    fn resolve_lineage_node(
+        &self,
+        id: TensorId,
+        name: Option<String>,
+    ) -> Result<LineageNode, EngineError> {
+        let tensor = self.store.get(id)?;
+        let mut inputs = Vec::new();
+
+        let operation = if let Some(lineage) = &tensor.metadata.lineage {
+            for input_id in &lineage.inputs {
+                // Find name for input if exists in this instance
+                let input_name = self
+                    .names
+                    .iter()
+                    .find(|(_, entry)| entry.id == *input_id)
+                    .map(|(n, _)| n.clone());
+                inputs.push(self.resolve_lineage_node(*input_id, input_name)?);
+            }
+            lineage.operation.clone()
+        } else {
+            "ROOT".to_string()
+        };
+
+        Ok(LineageNode {
+            tensor_id: id,
+            name,
+            operation,
+            inputs,
+        })
+    }
+
+    pub fn find_referencing_datasets(&self, tensor_id: TensorId) -> Vec<String> {
+        let mut referencers = Vec::new();
+        for (ds_name, ds) in self.tensor_datasets.datasets() {
+            for (_, reference) in &ds.columns {
+                if let crate::core::dataset::ResourceReference::Tensor { id } = reference {
+                    if *id == tensor_id {
+                        referencers.push(ds_name.clone());
+                        break;
+                    }
+                }
+            }
+        }
+        referencers
     }
 
     /// Obtiene un tensor por nombre

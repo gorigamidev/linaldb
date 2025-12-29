@@ -1,0 +1,31 @@
+# LINAL Introspection & Consistency Demo
+# This script demonstrates how to audit data integrity and trace execution lineage.
+
+# 1. Setup Base Tensors
+VECTOR base_a = [1.0, 2.0, 3.0]
+VECTOR base_b = [10.0, 10.0, 10.0]
+
+# 2. Derive results (Automatic Lineage Tracking)
+DERIVE step_1 FROM base_a + base_b
+DERIVE final_result FROM step_1 * 2.0
+
+# 3. Inspect Lineage
+# This shows exactly how 'final_result' was calculated, including all parents.
+SHOW LINEAGE final_result
+
+# 4. Create a Tensor-First Dataset (Zero-Copy)
+LET diagnostics = dataset("diagnostics")
+ATTACH final_result TO diagnostics.prediction
+ATTACH base_a TO diagnostics.input
+
+# 5. Audit Dataset Integrity
+# Verifies that all columns in the dataset point to existing, valid tensors.
+AUDIT DATASET diagnostics
+
+# 6. Show Dataset Health
+# The SHOW command for tensor-datasets now includes a health warning if dependencies are missing.
+SHOW diagnostics
+
+# 7. Demonstrate Audit Failure
+# Note: In a script, removing a tensor and auditing would show the failure.
+# We'll just show the PASSED state for now in this demo.

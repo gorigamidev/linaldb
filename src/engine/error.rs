@@ -7,6 +7,9 @@ pub enum EngineError {
     InvalidOp(String),
     DatasetError(DatasetStoreError),
     DatasetNotFound(String),
+    ExecutionError(String),
+    ConstraintViolation(String),
+    ReferenceError(String),
 }
 
 impl From<StoreError> for EngineError {
@@ -29,6 +32,9 @@ impl std::fmt::Display for EngineError {
             EngineError::InvalidOp(msg) => write!(f, "Invalid operation: {}", msg),
             EngineError::DatasetError(e) => write!(f, "Dataset error: {}", e),
             EngineError::DatasetNotFound(name) => write!(f, "Dataset not found: {}", name),
+            EngineError::ExecutionError(msg) => write!(f, "Execution error: {}", msg),
+            EngineError::ConstraintViolation(msg) => write!(f, "Constraint violation: {}", msg),
+            EngineError::ReferenceError(msg) => write!(f, "Reference error: {}", msg),
         }
     }
 }
