@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::core::dataset_legacy::{Dataset, DatasetId};
 use crate::core::store::{DatasetStore, InMemoryTensorStore};
-use crate::core::tensor::{Shape, Tensor, TensorId};
+use crate::core::tensor::{Lineage, Shape, Tensor, TensorId, TensorMetadata};
 use crate::core::tuple::{Schema, Tuple};
 
 use super::error::EngineError;
@@ -613,42 +613,46 @@ impl TensorDb {
 
     pub fn eval_index(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         tensor_name: &str,
         indices: Vec<usize>,
     ) -> Result<(), EngineError> {
         self.active_instance_mut()
-            .eval_index(output_name, tensor_name, indices)
+            .eval_index(ctx, output_name, tensor_name, indices)
     }
 
     pub fn eval_slice(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         tensor_name: &str,
         specs: Vec<super::kernels::SliceSpec>,
     ) -> Result<(), EngineError> {
         self.active_instance_mut()
-            .eval_slice(output_name, tensor_name, specs)
+            .eval_slice(ctx, output_name, tensor_name, specs)
     }
 
     pub fn eval_field_access(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         tuple_name: &str,
         field_name: &str,
     ) -> Result<(), EngineError> {
         self.active_instance_mut()
-            .eval_field_access(output_name, tuple_name, field_name)
+            .eval_field_access(ctx, output_name, tuple_name, field_name)
     }
 
     pub fn eval_column_access(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         dataset_name: &str,
         column_name: &str,
     ) -> Result<(), EngineError> {
         self.active_instance_mut()
-            .eval_column_access(output_name, dataset_name, column_name)
+            .eval_column_access(ctx, output_name, dataset_name, column_name)
     }
 
     pub fn create_index(
@@ -739,6 +743,25 @@ impl DatabaseInstance {
         Ok(())
     }
 
+    /// Inserta un objeto Tensor completo (preserva metadata)
+    pub fn insert_tensor_object(
+        &mut self,
+        name: impl Into<String>,
+        tensor: Tensor,
+    ) -> Result<(), EngineError> {
+        let name_str = name.into();
+        let id = tensor.id;
+        self.store.insert_existing_tensor(tensor)?;
+        self.names.insert(
+            name_str,
+            NameEntry {
+                id,
+                kind: TensorKind::Normal,
+            },
+        );
+        Ok(())
+    }
+
     /// Obtiene un tensor por nombre
     pub fn get(&self, name: &str) -> Result<&Tensor, EngineError> {
         let entry = self
@@ -770,7 +793,7 @@ impl DatabaseInstance {
         let in_tensor = in_tensor_ref.clone();
         let new_id = self.store.gen_id();
 
-        let result = match op {
+        let mut result = match op {
             UnaryOp::Scale(s) => self
                 .backend
                 .scale(ctx, &in_tensor, s, new_id)
@@ -788,6 +811,14 @@ impl DatabaseInstance {
                 .flatten(ctx, &in_tensor, new_id)
                 .map_err(EngineError::InvalidOp)?,
         };
+
+        // Attach lineage
+        let lineage = Lineage {
+            execution_id: ctx.execution_id(),
+            operation: op.to_string(),
+            inputs: vec![in_tensor.id],
+        };
+        result.metadata = Arc::new(TensorMetadata::new(new_id, None).with_lineage(lineage));
 
         let out_id = self.store.insert_existing_tensor(result)?;
         self.names.insert(
@@ -821,7 +852,7 @@ impl DatabaseInstance {
             _ => TensorKind::Normal,
         };
 
-        let result_tensor = match op {
+        let mut result_tensor = match op {
             BinaryOp::Add => self
                 .backend
                 .add(ctx, &a, &b, new_id)
@@ -865,10 +896,27 @@ impl DatabaseInstance {
                     .map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
-                let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+                let lineage = Lineage {
+                    execution_id: ctx.execution_id(),
+                    operation: op.to_string(),
+                    inputs: vec![a.id, b.id],
+                };
+                let metadata =
+                    crate::core::tensor::TensorMetadata::new(new_id, None).with_lineage(lineage);
                 Tensor::new(new_id, shape, data, metadata).map_err(EngineError::InvalidOp)?
             }
         };
+
+        // Attach lineage for backend-returned tensors
+        if result_tensor.metadata.lineage.is_none() {
+            let lineage = Lineage {
+                execution_id: ctx.execution_id(),
+                operation: op.to_string(),
+                inputs: vec![a.id, b.id],
+            };
+            result_tensor.metadata =
+                Arc::new(TensorMetadata::new(new_id, None).with_lineage(lineage));
+        }
 
         let out_id = self.store.insert_existing_tensor(result_tensor)?;
         self.names.insert(
@@ -900,10 +948,18 @@ impl DatabaseInstance {
         let b = b_ref.clone();
         let new_id = self.store.gen_id();
 
-        let result = self
+        let mut result = self
             .backend
             .matmul(ctx, &a, &b, new_id)
             .map_err(EngineError::InvalidOp)?;
+
+        // Attach lineage
+        let lineage = Lineage {
+            execution_id: ctx.execution_id(),
+            operation: "MATMUL".to_string(),
+            inputs: vec![a.id, b.id],
+        };
+        result.metadata = Arc::new(TensorMetadata::new(new_id, None).with_lineage(lineage));
 
         let out_kind = match (kind_a, kind_b) {
             (TensorKind::Strict, _) | (_, TensorKind::Strict) => TensorKind::Strict,
@@ -933,10 +989,18 @@ impl DatabaseInstance {
         let in_tensor = in_tensor_ref.clone();
         let new_id = self.store.gen_id();
 
-        let result = self
+        let mut result = self
             .backend
             .reshape(ctx, &in_tensor, new_shape, new_id)
             .map_err(EngineError::InvalidOp)?;
+
+        // Attach lineage
+        let lineage = Lineage {
+            execution_id: ctx.execution_id(),
+            operation: "RESHAPE".to_string(),
+            inputs: vec![in_tensor.id],
+        };
+        result.metadata = Arc::new(TensorMetadata::new(new_id, None).with_lineage(lineage));
 
         let out_id = self.store.insert_existing_tensor(result)?;
         self.names.insert(
@@ -972,10 +1036,18 @@ impl DatabaseInstance {
         let tensor_refs: Vec<&Tensor> = tensors.iter().collect();
         let new_id = self.store.gen_id();
 
-        let result = self
+        let mut result = self
             .backend
             .stack(ctx, &tensor_refs, axis, new_id)
             .map_err(EngineError::InvalidOp)?;
+
+        // Attach lineage
+        let lineage = Lineage {
+            execution_id: ctx.execution_id(),
+            operation: format!("STACK(axis={})", axis),
+            inputs: tensors.iter().map(|t| t.id).collect(),
+        };
+        result.metadata = Arc::new(TensorMetadata::new(new_id, None).with_lineage(lineage));
 
         let out_id = self.store.insert_existing_tensor(result)?;
         self.names
@@ -1067,6 +1139,7 @@ impl DatabaseInstance {
     /// Index into a tensor: output = tensor[indices]
     pub fn eval_index(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         tensor_name: &str,
         indices: Vec<usize>,
@@ -1075,8 +1148,16 @@ impl DatabaseInstance {
         let tensor = tensor_ref.clone();
         let new_id = self.store.gen_id();
 
-        let result = super::kernels::index_to_scalar(&tensor, &indices, new_id)
+        let mut result = super::kernels::index_to_scalar(&tensor, &indices, new_id)
             .map_err(EngineError::InvalidOp)?;
+
+        // Attach lineage
+        let lineage = Lineage {
+            execution_id: ctx.execution_id(),
+            operation: format!("INDEX{:?}", indices),
+            inputs: vec![tensor.id],
+        };
+        result.metadata = Arc::new(TensorMetadata::new(new_id, None).with_lineage(lineage));
 
         let out_id = self.store.insert_existing_tensor(result)?;
         self.names
@@ -1087,6 +1168,7 @@ impl DatabaseInstance {
     /// Slice a tensor: output = tensor[slice_specs]
     pub fn eval_slice(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         tensor_name: &str,
         specs: Vec<super::kernels::SliceSpec>,
@@ -1095,8 +1177,16 @@ impl DatabaseInstance {
         let tensor = tensor_ref.clone();
         let new_id = self.store.gen_id();
 
-        let result =
+        let mut result =
             super::kernels::slice_multi(&tensor, &specs, new_id).map_err(EngineError::InvalidOp)?;
+
+        // Attach lineage
+        let lineage = Lineage {
+            execution_id: ctx.execution_id(),
+            operation: format!("SLICE{:?}", specs),
+            inputs: vec![tensor.id],
+        };
+        result.metadata = Arc::new(TensorMetadata::new(new_id, None).with_lineage(lineage));
 
         let out_id = self.store.insert_existing_tensor(result)?;
         self.names
@@ -1108,6 +1198,7 @@ impl DatabaseInstance {
     /// Returns the field value as a scalar tensor
     pub fn eval_field_access(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         tuple_name: &str,
         field_name: &str,
@@ -1146,7 +1237,12 @@ impl DatabaseInstance {
             }
         };
 
-        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+        let lineage = Lineage {
+            execution_id: ctx.execution_id(),
+            operation: format!("FIELD_ACCESS({})", field_name),
+            inputs: Vec::new(),
+        };
+        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None).with_lineage(lineage);
         let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data, metadata)
             .map_err(|e| EngineError::InvalidOp(e))?;
 
@@ -1165,6 +1261,7 @@ impl DatabaseInstance {
     /// Returns the column as a vector tensor
     pub fn eval_column_access(
         &mut self,
+        ctx: &mut ExecutionContext,
         output_name: impl Into<String>,
         var_or_name: &str,
         column_name: &str,
@@ -1222,7 +1319,12 @@ impl DatabaseInstance {
             .collect();
 
         let tensor_data = tensor_data.map_err(|e| EngineError::InvalidOp(e))?;
-        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+        let lineage = Lineage {
+            execution_id: ctx.execution_id(),
+            operation: format!("COLUMN_ACCESS({})", column_name),
+            inputs: Vec::new(),
+        };
+        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None).with_lineage(lineage);
         let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data, metadata)
             .map_err(|e| EngineError::InvalidOp(e))?;
 

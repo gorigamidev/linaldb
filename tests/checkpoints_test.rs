@@ -4,7 +4,7 @@ use linal::TensorDb;
 use std::sync::Arc;
 
 #[test]
-fn test_phase2_checkpoints() {
+fn test_checkpoints() {
     let mut db = TensorDb::new();
 
     // 1. Setup: Create tensors and datasets via DSL
@@ -104,8 +104,9 @@ fn test_transitive_resolution_engine() {
     db.active_instance_mut().register_tensor_dataset(ds_ref);
 
     // Verify engine can resolve ds_ref.view_col
+    let mut ctx = linal::engine::context::ExecutionContext::new();
     db.active_instance_mut()
-        .eval_column_access("v_resolved", "ds_ref", "view_col")
+        .eval_column_access(&mut ctx, "v_resolved", "ds_ref", "view_col")
         .expect("Engine should resolve transitive reference");
 
     let v_resolved = db.get("v_resolved").unwrap();

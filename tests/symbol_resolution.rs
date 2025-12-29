@@ -2,7 +2,7 @@ use linal::dsl::execute_script;
 use linal::TensorDb;
 
 #[test]
-fn test_phase3_symbol_resolution() {
+fn symbol_resolution() {
     let mut db = TensorDb::new();
 
     let script = r#"

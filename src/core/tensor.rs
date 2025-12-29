@@ -14,12 +14,31 @@ impl TensorId {
     }
 }
 
+/// Unique identifier for an execution/query
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ExecutionId(pub Uuid);
+
+impl ExecutionId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+/// Information about how a tensor was derived
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Lineage {
+    pub execution_id: ExecutionId,
+    pub operation: String,
+    pub inputs: Vec<TensorId>,
+}
+
 /// Metadata about a tensor
 #[derive(Debug, Clone)]
 pub struct TensorMetadata {
     pub id: TensorId,
     pub created_at: DateTime<Utc>,
     pub creator: Option<String>,
+    pub lineage: Option<Lineage>,
     pub(crate) data_hash: std::sync::OnceLock<String>,
 }
 
@@ -30,12 +49,17 @@ impl Serialize for TensorMetadata {
     {
         use serde::ser::SerializeStruct;
         let has_hash = self.data_hash.get().is_some();
-        let num_fields = if has_hash { 4 } else { 3 };
+        let num_fields =
+            3 + (if has_hash { 1 } else { 0 }) + (if self.lineage.is_some() { 1 } else { 0 });
 
         let mut state = serializer.serialize_struct("TensorMetadata", num_fields)?;
         state.serialize_field("id", &self.id)?;
         state.serialize_field("created_at", &self.created_at)?;
         state.serialize_field("creator", &self.creator)?;
+
+        if let Some(lineage) = &self.lineage {
+            state.serialize_field("lineage", lineage)?;
+        }
 
         if let Some(hash) = self.data_hash.get() {
             state.serialize_field("data_hash", hash)?;
@@ -55,6 +79,7 @@ impl<'de> Deserialize<'de> for TensorMetadata {
             id: TensorId,
             created_at: DateTime<Utc>,
             creator: Option<String>,
+            lineage: Option<Lineage>,
             data_hash: Option<String>,
         }
 
@@ -68,6 +93,7 @@ impl<'de> Deserialize<'de> for TensorMetadata {
             id: fields.id,
             created_at: fields.created_at,
             creator: fields.creator,
+            lineage: fields.lineage,
             data_hash: lock,
         })
     }
@@ -79,8 +105,14 @@ impl TensorMetadata {
             id,
             created_at: Utc::now(),
             creator,
+            lineage: None,
             data_hash: std::sync::OnceLock::new(),
         }
+    }
+
+    pub fn with_lineage(mut self, lineage: Lineage) -> Self {
+        self.lineage = Some(lineage);
+        self
     }
 
     /// Internal method to compute hash if not already set.

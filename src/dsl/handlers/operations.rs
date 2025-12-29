@@ -84,12 +84,12 @@ pub fn handle_let(
 
         // Check for dot notation: name.field
         if expr.contains('.') && !expr.contains('[') {
-            return handle_dot_notation(db, output_name, expr, line_no);
+            return handle_dot_notation(db, output_name, expr, line_no, ctx);
         }
 
         // Check for indexing syntax: name[indices]
         if expr.contains('[') && expr.contains(']') {
-            return handle_indexing(db, output_name, expr, line_no);
+            return handle_indexing(db, output_name, expr, line_no, ctx);
         }
     }
 
@@ -378,6 +378,7 @@ fn handle_indexing(
     output_name: &str,
     expr: &str,
     line_no: usize,
+    ctx: &mut ExecutionContext,
 ) -> Result<DslOutput, DslError> {
     use crate::engine::kernels::SliceSpec;
 
@@ -463,14 +464,14 @@ fn handle_indexing(
             })
             .collect();
 
-        db.eval_index(output_name, tensor_name, indices)
+        db.eval_index(ctx, output_name, tensor_name, indices)
             .map_err(|e| DslError::Engine {
                 line: line_no,
                 source: e,
             })?;
     } else {
         // Use eval_slice for advanced indexing
-        db.eval_slice(output_name, tensor_name, specs)
+        db.eval_slice(ctx, output_name, tensor_name, specs)
             .map_err(|e| DslError::Engine {
                 line: line_no,
                 source: e,
@@ -489,6 +490,7 @@ fn handle_dot_notation(
     output_name: &str,
     expr: &str,
     line_no: usize,
+    ctx: &mut ExecutionContext,
 ) -> Result<DslOutput, DslError> {
     // Parse: object_name.field_name
     let parts: Vec<&str> = expr.split('.').collect();
@@ -504,14 +506,14 @@ fn handle_dot_notation(
 
     // Try as dataset column access first (Legacy or Tensor-First)
     if db.get_dataset(object_name).is_ok() || db.get_tensor_dataset(object_name).is_some() {
-        db.eval_column_access(output_name, object_name, field_name)
+        db.eval_column_access(ctx, output_name, object_name, field_name)
             .map_err(|e| DslError::Engine {
                 line: line_no,
                 source: e,
             })?;
     } else {
         // Try as tuple field access
-        db.eval_field_access(output_name, object_name, field_name)
+        db.eval_field_access(ctx, output_name, object_name, field_name)
             .map_err(|e| DslError::Engine {
                 line: line_no,
                 source: e,
@@ -558,6 +560,7 @@ fn evaluate_operand(
     base_name: &str,
     suffix: &str,
     line_no: usize,
+    ctx: &mut ExecutionContext,
 ) -> Result<String, DslError> {
     let expr = expr.trim();
 
@@ -565,7 +568,7 @@ fn evaluate_operand(
     if expr.contains('[') && expr.ends_with(']') {
         // Use a unique enough name for the temporary variable
         let temp_name = format!("_tmp_{}_{}", base_name, suffix);
-        handle_indexing(db, &temp_name, expr, line_no)?;
+        handle_indexing(db, &temp_name, expr, line_no, ctx)?;
         return Ok(temp_name);
     }
 
@@ -574,7 +577,7 @@ fn evaluate_operand(
     if expr.contains('.') && !expr.contains('[') {
         if expr.parse::<f32>().is_err() {
             let temp_name = format!("_tmp_{}_{}", base_name, suffix);
-            handle_dot_notation(db, &temp_name, expr, line_no)?;
+            handle_dot_notation(db, &temp_name, expr, line_no, ctx)?;
             return Ok(temp_name);
         }
     }
@@ -610,9 +613,22 @@ fn handle_infix_op(
         .unwrap_or_default()
         .as_nanos();
 
-    let left_name = evaluate_operand(db, left, output_name, &format!("L_{}", timestamp), line_no)?;
-    let right_name =
-        evaluate_operand(db, right, output_name, &format!("R_{}", timestamp), line_no)?;
+    let left_name = evaluate_operand(
+        db,
+        left,
+        output_name,
+        &format!("L_{}", timestamp),
+        line_no,
+        ctx,
+    )?;
+    let right_name = evaluate_operand(
+        db,
+        right,
+        output_name,
+        &format!("R_{}", timestamp),
+        line_no,
+        ctx,
+    )?;
 
     db.eval_binary(ctx, output_name, &left_name, &right_name, op)
         .map_err(|e| DslError::Engine {

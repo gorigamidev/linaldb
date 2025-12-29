@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use linal::core::tuple::{Field, Schema, Tuple};
 use linal::core::value::{Value, ValueType};
-use linal::engine::TensorDb;
+use linal::engine::{context::ExecutionContext, TensorDb};
+use std::sync::Arc;
 
 #[test]
 fn test_dataset_column_access_direct() {
@@ -42,7 +42,9 @@ fn test_dataset_column_access_direct() {
     db.insert_row("users", row2).unwrap();
 
     // Extract age column using dot notation
-    db.eval_column_access("ages", "users", "age").unwrap();
+    let mut ctx = ExecutionContext::new();
+    db.eval_column_access(&mut ctx, "ages", "users", "age")
+        .unwrap();
 
     // Verify
     let tensor = db.get("ages").unwrap();
@@ -73,7 +75,9 @@ fn test_tuple_field_access_direct() {
     db.insert_row("user", row).unwrap();
 
     // Access field using dot notation
-    db.eval_field_access("user_score", "user", "score").unwrap();
+    let mut ctx = ExecutionContext::new();
+    db.eval_field_access(&mut ctx, "user_score", "user", "score")
+        .unwrap();
 
     // Verify
     let tensor = db.get("user_score").unwrap();
@@ -93,7 +97,8 @@ fn test_invalid_column() {
     db.create_dataset("test".to_string(), schema).unwrap();
 
     // Try to access non-existent column
-    let result = db.eval_column_access("x", "test", "nonexistent");
+    let mut ctx = ExecutionContext::new();
+    let result = db.eval_column_access(&mut ctx, "x", "test", "nonexistent");
 
     assert!(result.is_err());
     println!("Error (expected): {:?}", result.unwrap_err());
@@ -128,9 +133,13 @@ fn test_multiple_columns() {
     db.insert_row("points", p2).unwrap();
 
     // Extract each column
-    db.eval_column_access("x_vals", "points", "x").unwrap();
-    db.eval_column_access("y_vals", "points", "y").unwrap();
-    db.eval_column_access("z_vals", "points", "z").unwrap();
+    let mut ctx = ExecutionContext::new();
+    db.eval_column_access(&mut ctx, "x_vals", "points", "x")
+        .unwrap();
+    db.eval_column_access(&mut ctx, "y_vals", "points", "y")
+        .unwrap();
+    db.eval_column_access(&mut ctx, "z_vals", "points", "z")
+        .unwrap();
 
     // Verify
     let x = db.get("x_vals").unwrap();

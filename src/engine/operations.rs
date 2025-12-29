@@ -1,3 +1,5 @@
+use std::fmt;
+
 /// Operaciones binarias de alto nivel
 #[derive(Debug, Clone)]
 pub enum BinaryOp {
@@ -17,6 +19,21 @@ pub enum BinaryOp {
     Distance,
 }
 
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            BinaryOp::Add => "ADD",
+            BinaryOp::Subtract => "SUBTRACT",
+            BinaryOp::Multiply => "MULTIPLY",
+            BinaryOp::Divide => "DIVIDE",
+            BinaryOp::Correlate => "CORRELATE",
+            BinaryOp::Similarity => "SIMILARITY",
+            BinaryOp::Distance => "DISTANCE",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 /// Operaciones unarias
 #[derive(Debug, Clone)]
 pub enum UnaryOp {
@@ -28,6 +45,17 @@ pub enum UnaryOp {
     Transpose,
     /// FLATTEN a (flatten to 1D)
     Flatten,
+}
+
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UnaryOp::Scale(fac) => write!(f, "SCALE(by={:.4})", fac),
+            UnaryOp::Normalize => write!(f, "NORMALIZE"),
+            UnaryOp::Transpose => write!(f, "TRANSPOSE"),
+            UnaryOp::Flatten => write!(f, "FLATTEN"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

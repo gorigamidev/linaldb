@@ -1,10 +1,12 @@
 use crate::core::dataset_legacy::DatasetId;
-use crate::core::tensor::TensorId;
+use crate::core::tensor::{ExecutionId, TensorId};
 use bumpalo::Bump;
 
 /// Execution context for a single query/operation.
 /// Manages temporary allocations and ensures automatic cleanup.
 pub struct ExecutionContext {
+    /// Unique ID for this execution
+    execution_id: ExecutionId,
     /// Arena allocator for temporary values
     arena: Bump,
     /// Temporary tensors to clean up on drop (lazily initialized)
@@ -17,6 +19,7 @@ impl ExecutionContext {
     /// Create a new execution context
     pub fn new() -> Self {
         Self {
+            execution_id: ExecutionId::new(),
             arena: Bump::new(),
             temp_tensors: None,
             temp_datasets: None,
@@ -26,10 +29,15 @@ impl ExecutionContext {
     /// Create with specific arena capacity
     pub fn with_capacity(bytes: usize) -> Self {
         Self {
+            execution_id: ExecutionId::new(),
             arena: Bump::with_capacity(bytes),
             temp_tensors: None,
             temp_datasets: None,
         }
+    }
+
+    pub fn execution_id(&self) -> ExecutionId {
+        self.execution_id
     }
 
     /// Reset the context for reuse without reallocating

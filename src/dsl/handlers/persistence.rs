@@ -277,8 +277,9 @@ fn handle_load_tensor(
         })?;
 
     // Insert into db
-    // We create a new tensor with a new ID in the current DB, but reuse shape and data
-    db.insert_named(tensor_name, tensor.shape.clone(), (*tensor.data).clone())
+    // We preserve the loaded tensor (including its metadata/lineage)
+    db.active_instance_mut()
+        .insert_tensor_object(tensor_name, tensor)
         .map_err(|e| DslError::Engine {
             line: line_no,
             source: e,

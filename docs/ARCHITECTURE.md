@@ -30,7 +30,7 @@ The engine is built in Rust with a modular architecture that separates concerns 
 
 ## System Architecture
 
-```
+```text
 ┌──────────────────────────────────────────────────────────┐
 │                      Application Layer                   │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
@@ -206,7 +206,7 @@ Command-specific handlers:
 - **explain.rs**: EXPLAIN, EXPLAIN PLAN
 - **introspection.rs**: SHOW commands
 
-#### `error.rs`
+#### 3.1 `error.rs`
 
 - **DslError**: DSL-specific error types
 
@@ -254,7 +254,7 @@ Utility functions:
 
 ### 1. Command Parsing
 
-```
+```#rs
 DSL Command → Parser → Command AST → Route to Handler
 ```
 
@@ -266,13 +266,13 @@ Example: `SELECT * FROM users WHERE id > 10`
 
 ### 2. Query Planning (for SELECT queries)
 
-```
+```rs
 SELECT Query → Logical Plan → Physical Plan → Execution
 ```
 
 1. **Logical Plan**: High-level representation
 
-   ```
+   ```rs
    Project(columns: [*])
      └─ Filter(predicate: id > 10)
          └─ Scan(table: users)
@@ -284,7 +284,7 @@ SELECT Query → Logical Plan → Physical Plan → Execution
 
 3. **Physical Plan**: Executable plan
 
-   ```
+   ```rs
    IndexScan(index: id_idx, predicate: > 10)
      └─ Project(columns: [*])
    ```
@@ -389,7 +389,7 @@ On engine startup:
 
 ### Type Hierarchy
 
-```
+```text
 Value
 ├── Scalar
 │   ├── Int

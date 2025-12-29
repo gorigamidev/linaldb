@@ -1,0 +1,25 @@
+{
+  "id": "250f3035-1f02-4b47-ba3f-bcf3c77ac083",
+  "shape": {
+    "dims": [
+      2
+    ]
+  },
+  "data": [
+    2.0,
+    4.0
+  ],
+  "metadata": {
+    "id": "250f3035-1f02-4b47-ba3f-bcf3c77ac083",
+    "created_at": "2025-12-29T16:03:29.561283Z",
+    "creator": null,
+    "lineage": {
+      "execution_id": "1f991918-7f9d-450c-a39f-70ea3a56aebc",
+      "operation": "MULTIPLY",
+      "inputs": [
+        "f48e8b8a-8ccd-4b7c-b16e-79efc15d00b1",
+        "7126835d-e0e1-4a26-a504-1958fde47d28"
+      ]
+    }
+  }
+}
