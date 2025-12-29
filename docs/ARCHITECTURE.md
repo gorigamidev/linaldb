@@ -119,13 +119,14 @@ The core module contains fundamental data structures and abstractions:
 - **Schema**: Column definitions with types and constraints
 - **Field**: Individual column specification
 
-#### `dataset/` (Tensor-First)
+#### `dataset/` (Reference Graph)
 
-- **Dataset**: Zero-copy view over existing tensors. Holds `TensorId` references.
-- **DatasetSchema**: Column definitions mapping names to `ValueType` and `Shape`.
-- **DatasetRegistry**: Runtime registry for managing these views.
-- **Symbol Resolution**: Supports dot notation (`ds.column`) for direct integration into any tensor operation.
-- **Materialization**: Can be converted to legacy row-based datasets for persistence via standard Parquet.
+- **Dataset**: A semantic view over existing tensors or other dataset columns. It does not own data directly but stores a map of `ResourceReference`s.
+- **ResourceReference**: An enum representing a link to either a specific `TensorId` or a `(dataset, column)` pair in another dataset.
+- **DatasetGraph**: A component responsible for resolving references. It supports **Transitive Resolution** (e.g., resolving a view of a view) and implements **Circular Dependency Detection** to prevent infinite resolution loops.
+- **ColumnRole**: Metadata categorizing columns by their semantic purpose (e.g., `Feature`, `Target`, `Weight`, `Guid`).
+- **Zero-Copy Guarantees**: Adding a column is an O(1) metadata operation. Underlying tensor data is shared via atomic reference counting (`Arc`), ensuring no data duplication.
+- **Materialization**: While datasets are views in-memory, they can be materialized into physical rows and persisted via standard Parquet for portability.
 
 #### `dataset_legacy.rs` (Row-Based)
 

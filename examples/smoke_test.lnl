@@ -1,5 +1,5 @@
 // --- Phase 10: Multi-Database Support ---
-CREATE DATABASE smoke_db_final
+CREATE DATABASE IF NOT EXISTS smoke_db_final
 USE smoke_db_final
 SHOW DATABASES
 
@@ -41,12 +41,12 @@ SAVE DATASET users
 LIST DATASETS
 
 // --- Cleanup & Context Switching ---
-CREATE DATABASE temp_db
+CREATE DATABASE IF NOT EXISTS temp_db
 USE temp_db
 DATASET dummy COLUMNS (x: INT)
 INSERT INTO dummy VALUES (1)
 SHOW ALL DATASETS
 
-DROP DATABASE temp_db
-USE analytics
+DROP DATABASE IF EXISTS temp_db
+USE default
 SHOW ALL DATASETS

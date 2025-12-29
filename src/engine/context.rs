@@ -144,7 +144,7 @@ mod tests {
     fn test_tracking() {
         let mut ctx = ExecutionContext::new();
 
-        ctx.track_tensor(TensorId(1));
+        ctx.track_tensor(TensorId::new());
         ctx.track_dataset(DatasetId(2));
 
         assert_eq!(ctx.temp_tensors().len(), 1);

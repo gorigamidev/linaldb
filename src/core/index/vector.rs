@@ -44,8 +44,10 @@ impl Index for VectorIndex {
         match value {
             Value::Vector(data) => {
                 // Convert Vec<f32> to Tensor (MVP: Shape is inferred as [len])
-                use crate::core::tensor::{Shape, Tensor, TensorId};
-                let tensor = Tensor::new(TensorId(0), Shape::new(vec![data.len()]), data.clone())
+                use crate::core::tensor::{Shape, Tensor, TensorId, TensorMetadata};
+                let id = TensorId::new();
+                let metadata = TensorMetadata::new(id, None);
+                let tensor = Tensor::new(id, Shape::new(vec![data.len()]), data.clone(), metadata)
                     .map_err(|e| e.to_string())?;
 
                 self.vectors.push((row_id, tensor));

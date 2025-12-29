@@ -103,11 +103,42 @@ impl DatabaseInstance {
             .map(|s| s.as_str())
             .unwrap_or(ds_var_or_name);
 
-        let ds = self.tensor_datasets.get_mut(ds_name).ok_or_else(|| {
-            EngineError::InvalidOp(format!("Tensor dataset '{}' not found", ds_name))
-        })?;
+        // 4. Validate row count consistency (using immutable borrow first)
+        let rows_in_new_col = match tensor.shape.rank() {
+            0 => 1,
+            _ => tensor.shape.dims[0],
+        };
 
-        // 4. Update schema and columns
+        if let Some(ds) = self.tensor_datasets.get(ds_name) {
+            if let Some((_, first_ref)) = ds.columns.iter().next() {
+                let graph = crate::core::dataset::DatasetGraph::new(&self.tensor_datasets);
+                let first_tensor_id = graph.resolve_to_tensor(first_ref).map_err(|e| {
+                    EngineError::InvalidOp(format!("Dependency resolution error: {}", e))
+                })?;
+
+                let first_tensor = self.store.get(first_tensor_id)?;
+                let rows_in_ds = match first_tensor.shape.rank() {
+                    0 => 1,
+                    _ => first_tensor.shape.dims[0],
+                };
+
+                if rows_in_new_col != rows_in_ds {
+                    return Err(EngineError::InvalidOp(format!(
+                        "Column '{}' has {} rows, but dataset '{}' has {} rows",
+                        col_name, rows_in_new_col, ds_name, rows_in_ds
+                    )));
+                }
+            }
+        } else {
+            return Err(EngineError::InvalidOp(format!(
+                "Tensor dataset '{}' not found",
+                ds_name
+            )));
+        }
+
+        // 5. Update schema and columns (mutable borrow now safe)
+        let ds = self.tensor_datasets.get_mut(ds_name).unwrap();
+
         let value_type = match tensor.shape.rank() {
             1 => ValueType::Vector(tensor.shape.dims[0]),
             2 => {
@@ -121,37 +152,17 @@ impl DatabaseInstance {
             _ => ValueType::Vector(tensor.shape.num_elements()),
         };
 
-        // 4. Validate row count consistency
-        let rows_in_new_col = match tensor.shape.rank() {
-            0 => 1,
-            _ => tensor.shape.dims[0],
-        };
-
-        if !ds.columns.is_empty() {
-            // Check first existing column
-            if let Some((_, first_tensor_id)) = ds.columns.iter().next() {
-                let first_tensor = self.store.get(*first_tensor_id)?;
-                let rows_in_ds = match first_tensor.shape.rank() {
-                    0 => 1,
-                    _ => first_tensor.shape.dims[0],
-                };
-
-                if rows_in_new_col != rows_in_ds {
-                    return Err(EngineError::InvalidOp(format!(
-                        "Column '{}' has {} rows, but dataset '{}' has {} rows",
-                        col_name, rows_in_new_col, ds_name, rows_in_ds
-                    )));
-                }
-            }
-        }
-
-        let schema = crate::core::dataset::ColumnSchema {
-            name: col_name.to_string(),
+        let schema = crate::core::dataset::ColumnSchema::new(
+            col_name.to_string(),
             value_type,
-            shape: tensor.shape.clone(),
-        };
+            tensor.shape.clone(),
+        );
 
-        ds.add_column(col_name.to_string(), tensor_id, schema);
+        ds.add_column(
+            col_name.to_string(),
+            crate::core::dataset::ResourceReference::tensor(tensor_id),
+            schema,
+        );
         Ok(())
     }
     /// Verify that all columns in a tensor-first dataset point to existing tensors.
@@ -168,8 +179,12 @@ impl DatabaseInstance {
         })?;
 
         let mut missing_cols = Vec::new();
-        for (col_name, tensor_id) in &ds.columns {
-            if self.store.get(*tensor_id).is_err() {
+        let graph = crate::core::dataset::DatasetGraph::new(&self.tensor_datasets);
+        for (col_name, reference) in &ds.columns {
+            let tensor_id = graph.resolve_to_tensor(reference).map_err(|e| {
+                EngineError::InvalidOp(format!("Dependency resolution error: {}", e))
+            })?;
+            if self.store.get(tensor_id).is_err() {
                 missing_cols.push(col_name.clone());
             }
         }
@@ -209,8 +224,12 @@ impl DatabaseInstance {
         col_names.sort();
 
         for col_name in col_names {
-            let tensor_id = ds.columns.get(&col_name).unwrap();
-            let tensor = self.store.get(*tensor_id)?;
+            let reference = ds.columns.get(&col_name).unwrap();
+            let graph = crate::core::dataset::DatasetGraph::new(&self.tensor_datasets);
+            let tensor_id = graph.resolve_to_tensor(reference).map_err(|e| {
+                EngineError::InvalidOp(format!("Dependency resolution error: {}", e))
+            })?;
+            let tensor = self.store.get(tensor_id)?;
 
             let (rows_in_col, vt) = match tensor.shape.rank() {
                 0 => (1, crate::core::value::ValueType::Float), // One row, one scalar
@@ -749,7 +768,7 @@ impl DatabaseInstance {
     ) -> Result<(), EngineError> {
         let (in_tensor_ref, in_kind) = self.get_with_kind(input_name)?;
         let in_tensor = in_tensor_ref.clone();
-        let new_id = self.store.gen_id_internal();
+        let new_id = self.store.gen_id();
 
         let result = match op {
             UnaryOp::Scale(s) => self
@@ -794,7 +813,7 @@ impl DatabaseInstance {
         let (b_ref, kind_b) = self.get_with_kind(right_name)?;
         let a = a_ref.clone();
         let b = b_ref.clone();
-        let new_id = self.store.gen_id_internal();
+        let new_id = self.store.gen_id();
 
         // Si alguno es STRICT, el resultado también es STRICT.
         let out_kind = match (kind_a, kind_b) {
@@ -826,7 +845,8 @@ impl DatabaseInstance {
                     .map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
-                Tensor::new(new_id, shape, data).map_err(EngineError::InvalidOp)?
+                let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata).map_err(EngineError::InvalidOp)?
             }
             BinaryOp::Similarity => {
                 let value = self
@@ -835,7 +855,8 @@ impl DatabaseInstance {
                     .map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
-                Tensor::new(new_id, shape, data).map_err(EngineError::InvalidOp)?
+                let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata).map_err(EngineError::InvalidOp)?
             }
             BinaryOp::Distance => {
                 let value = self
@@ -844,7 +865,8 @@ impl DatabaseInstance {
                     .map_err(EngineError::InvalidOp)?;
                 let shape = Shape::new(Vec::<usize>::new());
                 let data = vec![value];
-                Tensor::new(new_id, shape, data).map_err(EngineError::InvalidOp)?
+                let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata).map_err(EngineError::InvalidOp)?
             }
         };
 
@@ -876,7 +898,7 @@ impl DatabaseInstance {
         let (b_ref, kind_b) = self.get_with_kind(right_name)?;
         let a = a_ref.clone();
         let b = b_ref.clone();
-        let new_id = self.store.gen_id_internal();
+        let new_id = self.store.gen_id();
 
         let result = self
             .backend
@@ -909,7 +931,7 @@ impl DatabaseInstance {
     ) -> Result<(), EngineError> {
         let (in_tensor_ref, in_kind) = self.get_with_kind(input_name)?;
         let in_tensor = in_tensor_ref.clone();
-        let new_id = self.store.gen_id_internal();
+        let new_id = self.store.gen_id();
 
         let result = self
             .backend
@@ -948,7 +970,7 @@ impl DatabaseInstance {
         }
 
         let tensor_refs: Vec<&Tensor> = tensors.iter().collect();
-        let new_id = self.store.gen_id_internal();
+        let new_id = self.store.gen_id();
 
         let result = self
             .backend
@@ -1051,7 +1073,7 @@ impl DatabaseInstance {
     ) -> Result<(), EngineError> {
         let (tensor_ref, kind) = self.get_with_kind(tensor_name)?;
         let tensor = tensor_ref.clone();
-        let new_id = self.store.gen_id_internal();
+        let new_id = self.store.gen_id();
 
         let result = super::kernels::index_to_scalar(&tensor, &indices, new_id)
             .map_err(EngineError::InvalidOp)?;
@@ -1071,7 +1093,7 @@ impl DatabaseInstance {
     ) -> Result<(), EngineError> {
         let (tensor_ref, kind) = self.get_with_kind(tensor_name)?;
         let tensor = tensor_ref.clone();
-        let new_id = self.store.gen_id_internal();
+        let new_id = self.store.gen_id();
 
         let result =
             super::kernels::slice_multi(&tensor, &specs, new_id).map_err(EngineError::InvalidOp)?;
@@ -1109,7 +1131,7 @@ impl DatabaseInstance {
             .clone(); // Clone to avoid borrow issues
 
         // Convert value to scalar tensor
-        let new_id = self.store.gen_id_internal();
+        let new_id = self.store.gen_id();
         let shape = crate::core::tensor::Shape::new(vec![]);
 
         let tensor_data = match value {
@@ -1124,7 +1146,8 @@ impl DatabaseInstance {
             }
         };
 
-        let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data)
+        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+        let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data, metadata)
             .map_err(|e| EngineError::InvalidOp(e))?;
 
         let out_id = self.store.insert_existing_tensor(tensor)?;
@@ -1155,7 +1178,12 @@ impl DatabaseInstance {
 
         // 2. Try as tensor-first dataset (Zero-copy path)
         if let Some(ds) = self.tensor_datasets.get(ds_name) {
-            if let Some(tensor_id) = ds.get_tensor_id(column_name) {
+            if let Some(reference) = ds.get_reference(column_name) {
+                let graph = crate::core::dataset::DatasetGraph::new(&self.tensor_datasets);
+                let tensor_id = graph.resolve_to_tensor(reference).map_err(|e| {
+                    EngineError::InvalidOp(format!("Dependency resolution error: {}", e))
+                })?;
+
                 // Determine kind (Normal/Strict) - for now default to Normal
                 self.names.insert(
                     output_name.into(),
@@ -1180,7 +1208,7 @@ impl DatabaseInstance {
             .map_err(|e| EngineError::InvalidOp(e))?;
 
         // Convert column values to tensor
-        let new_id = self.store.gen_id_internal();
+        let new_id = self.store.gen_id();
         let shape = crate::core::tensor::Shape::new(vec![column_values.len()]);
 
         let tensor_data: Result<Vec<f32>, String> = column_values
@@ -1194,7 +1222,8 @@ impl DatabaseInstance {
             .collect();
 
         let tensor_data = tensor_data.map_err(|e| EngineError::InvalidOp(e))?;
-        let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data)
+        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+        let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data, metadata)
             .map_err(|e| EngineError::InvalidOp(e))?;
 
         let out_id = self.store.insert_existing_tensor(tensor)?;

@@ -42,6 +42,18 @@ pub trait StorageEngine {
     /// Load a dataset from storage
     fn load_dataset(&self, name: &str) -> Result<Dataset, StorageError>;
 
+    /// Save a reference-based dataset
+    fn save_reference_dataset(
+        &self,
+        dataset: &crate::core::dataset::Dataset,
+    ) -> Result<(), StorageError>;
+
+    /// Load a reference-based dataset
+    fn load_reference_dataset(
+        &self,
+        name: &str,
+    ) -> Result<crate::core::dataset::Dataset, StorageError>;
+
     /// Check if a dataset exists
     fn dataset_exists(&self, name: &str) -> bool;
 
@@ -419,6 +431,32 @@ impl StorageEngine for ParquetStorage {
         dataset.rows = rows;
         dataset.metadata = metadata;
 
+        Ok(dataset)
+    }
+
+    fn save_reference_dataset(
+        &self,
+        dataset: &crate::core::dataset::Dataset,
+    ) -> Result<(), StorageError> {
+        self.ensure_directories()?;
+        let path = format!("{}/datasets/{}.ref.json", self.base_path, dataset.name);
+        let json = serde_json::to_string_pretty(dataset)
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        fs::write(path, json)?;
+        Ok(())
+    }
+
+    fn load_reference_dataset(
+        &self,
+        name: &str,
+    ) -> Result<crate::core::dataset::Dataset, StorageError> {
+        let path = format!("{}/datasets/{}.ref.json", self.base_path, name);
+        if !Path::new(&path).exists() {
+            return Err(StorageError::DatasetNotFound(name.to_string()));
+        }
+        let json = fs::read_to_string(path)?;
+        let dataset =
+            serde_json::from_str(&json).map_err(|e| StorageError::Serialization(e.to_string()))?;
         Ok(dataset)
     }
 

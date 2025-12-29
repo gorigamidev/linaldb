@@ -346,7 +346,8 @@ impl ComputeBackend for SimdBackend {
         let len = a.len();
         let mut data = self.alloc_output(ctx, len);
         self.add_simd(a.data_ref(), b.data_ref(), &mut data);
-        Tensor::new(new_id, a.shape.clone(), data).map_err(|e| e.to_string())
+        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+        Tensor::new(new_id, a.shape.clone(), data, metadata).map_err(|e| e.to_string())
     }
 
     fn sub(
@@ -362,7 +363,8 @@ impl ComputeBackend for SimdBackend {
         let len = a.len();
         let mut data = self.alloc_output(ctx, len);
         self.sub_simd(a.data_ref(), b.data_ref(), &mut data);
-        Tensor::new(new_id, a.shape.clone(), data).map_err(|e| e.to_string())
+        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+        Tensor::new(new_id, a.shape.clone(), data, metadata).map_err(|e| e.to_string())
     }
 
     fn multiply(
@@ -378,7 +380,8 @@ impl ComputeBackend for SimdBackend {
         let len = a.len();
         let mut data = self.alloc_output(ctx, len);
         self.mul_simd(a.data_ref(), b.data_ref(), &mut data);
-        Tensor::new(new_id, a.shape.clone(), data).map_err(|e| e.to_string())
+        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
+        Tensor::new(new_id, a.shape.clone(), data, metadata).map_err(|e| e.to_string())
     }
 
     fn divide(

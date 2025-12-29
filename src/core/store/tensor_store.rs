@@ -24,29 +24,26 @@ impl std::error::Error for StoreError {}
 /// Motor en memoria: guarda tensores en una lista.
 #[derive(Debug)]
 pub struct InMemoryTensorStore {
-    next_id: u64,
     tensors: Vec<Tensor>,
 }
 
 impl InMemoryTensorStore {
     pub fn new() -> Self {
         Self {
-            next_id: 0,
             tensors: Vec::new(),
         }
     }
 
     /// Genera un nuevo ID interno
-    pub fn gen_id_internal(&mut self) -> TensorId {
-        let id = TensorId(self.next_id);
-        self.next_id += 1;
-        id
+    pub fn gen_id(&mut self) -> TensorId {
+        TensorId::new()
     }
 
     /// Inserta un tensor a partir de shape + data
     pub fn insert_tensor(&mut self, shape: Shape, data: Vec<f32>) -> Result<TensorId, StoreError> {
-        let id = self.gen_id_internal();
-        let tensor = Tensor::new(id, shape, data).map_err(StoreError::InvalidTensor)?;
+        let id = self.gen_id();
+        let metadata = crate::core::tensor::TensorMetadata::new(id, None);
+        let tensor = Tensor::new(id, shape, data, metadata).map_err(StoreError::InvalidTensor)?;
         self.tensors.push(tensor);
         Ok(id)
     }

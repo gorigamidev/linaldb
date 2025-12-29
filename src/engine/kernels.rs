@@ -1,6 +1,6 @@
 // src/engine/kernels.rs
 
-use crate::core::tensor::{Shape, Tensor, TensorId};
+use crate::core::tensor::{Shape, Tensor, TensorId, TensorMetadata};
 
 /// Estrategia para combinar dos tensores en una operación elemento a elemento.
 /// Soporta:
@@ -22,7 +22,8 @@ fn elementwise_binary_op(
         for i in 0..len {
             data.push(op(a_data[i], b_data[i])?);
         }
-        return Tensor::new(new_id, a.shape.clone(), data);
+        let metadata = TensorMetadata::new(new_id, None);
+        return Tensor::new(new_id, a.shape.clone(), data, metadata);
     }
 
     match (a.shape.rank(), b.shape.rank()) {
@@ -35,7 +36,8 @@ fn elementwise_binary_op(
             for &y in b.data_ref().iter() {
                 data.push(op(scalar, y)?);
             }
-            Tensor::new(new_id, shape, data)
+            let metadata = TensorMetadata::new(new_id, None);
+            Tensor::new(new_id, shape, data, metadata)
         }
         (_, 0) => {
             let shape = a.shape.clone();
@@ -45,7 +47,8 @@ fn elementwise_binary_op(
             for &x in a.data_ref().iter() {
                 data.push(op(x, scalar)?);
             }
-            Tensor::new(new_id, shape, data)
+            let metadata = TensorMetadata::new(new_id, None);
+            Tensor::new(new_id, shape, data, metadata)
         }
         // Vectores (rank 1) – posiblemente longitudes distintas
         (1, 1) => {
@@ -70,7 +73,8 @@ fn elementwise_binary_op(
             }
 
             let shape = Shape::new(vec![len]);
-            Tensor::new(new_id, shape, data)
+            let metadata = TensorMetadata::new(new_id, None);
+            Tensor::new(new_id, shape, data, metadata)
         }
         // Otros casos: de momento, error
         _ => Err(format!(
@@ -117,7 +121,8 @@ pub fn divide(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor, String
 /// Multiplicación por escalar: s * a
 pub fn scalar_mul(a: &Tensor, s: f32, new_id: TensorId) -> Result<Tensor, String> {
     let data: Vec<f32> = a.data_ref().iter().map(|x| s * x).collect();
-    Tensor::new(new_id, a.shape.clone(), data)
+    let metadata = TensorMetadata::new(new_id, None);
+    Tensor::new(new_id, a.shape.clone(), data, metadata)
 }
 
 /// Producto punto entre dos tensores rank-1 (vectores)
@@ -283,7 +288,8 @@ pub fn matmul(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor, String
     }
 
     let shape = Shape::new(vec![m, p]);
-    Tensor::new(new_id, shape, data)
+    let metadata = TensorMetadata::new(new_id, None);
+    Tensor::new(new_id, shape, data, metadata)
 }
 
 /// Transpose a rank-2 tensor (matrix)
@@ -305,7 +311,8 @@ pub fn transpose(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
     }
 
     let shape = Shape::new(vec![n, m]);
-    Tensor::new(new_id, shape, data)
+    let metadata = TensorMetadata::new(new_id, None);
+    Tensor::new(new_id, shape, data, metadata)
 }
 
 /// Reshape a tensor to a new shape (total elements must match)
@@ -320,14 +327,18 @@ pub fn reshape(a: &Tensor, new_shape: Shape, new_id: TensorId) -> Result<Tensor,
         ));
     }
 
-    Tensor::new(new_id, new_shape, a.data_ref().to_vec())
+    let data = a.data_ref().to_vec();
+    let metadata = TensorMetadata::new(new_id, None);
+    Tensor::new(new_id, new_shape, data, metadata)
 }
 
 /// Flatten a tensor to rank-1 (vector)
 pub fn flatten(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
     let total_elements = a.shape.num_elements();
+    let data = a.data_ref().to_vec();
+    let metadata = TensorMetadata::new(new_id, None);
     let shape = Shape::new(vec![total_elements]);
-    Tensor::new(new_id, shape, a.data_ref().to_vec())
+    Tensor::new(new_id, shape, data, metadata)
 }
 
 /// Slice a tensor along a dimension
@@ -366,7 +377,8 @@ pub fn slice(
             // Simple vector slice
             let data = a.data_ref()[start..end].to_vec();
             let shape = Shape::new(vec![end - start]);
-            Tensor::new(new_id, shape, data)
+            let metadata = TensorMetadata::new(new_id, None);
+            Tensor::new(new_id, shape, data, metadata)
         }
         2 => {
             // Matrix slice
@@ -383,7 +395,8 @@ pub fn slice(
                     }
                 }
                 let shape = Shape::new(vec![new_rows, cols]);
-                Tensor::new(new_id, shape, data)
+                let metadata = TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata)
             } else {
                 // Slice columns
                 let new_cols = end - start;
@@ -394,7 +407,8 @@ pub fn slice(
                     }
                 }
                 let shape = Shape::new(vec![rows, new_cols]);
-                Tensor::new(new_id, shape, data)
+                let metadata = TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata)
             }
         }
         _ => Err(format!(
@@ -440,7 +454,9 @@ pub fn index_to_scalar(a: &Tensor, indices: &[usize], new_id: TensorId) -> Resul
     let value = index(a, indices)?;
     // Create scalar tensor (rank 0)
     let shape = Shape::new(vec![]);
-    Tensor::new(new_id, shape, vec![value])
+    let data = vec![value];
+    let metadata = TensorMetadata::new(new_id, None);
+    Tensor::new(new_id, shape, data, metadata)
 }
 
 /// Slice specification for a single dimension
@@ -498,7 +514,8 @@ pub fn slice_multi(a: &Tensor, specs: &[SliceSpec], new_id: TensorId) -> Result<
                     data.push(a.data_ref()[i * cols + j]);
                 }
                 let shape = Shape::new(vec![cols]);
-                Tensor::new(new_id, shape, data)
+                let metadata = TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata)
             }
             // Column slice: m[*, j] or m[:, j]
             (SliceSpec::All, SliceSpec::Index(j)) => {
@@ -508,7 +525,8 @@ pub fn slice_multi(a: &Tensor, specs: &[SliceSpec], new_id: TensorId) -> Result<
                     data.push(a.data_ref()[i * cols + j]);
                 }
                 let shape = Shape::new(vec![rows]);
-                Tensor::new(new_id, shape, data)
+                let metadata = TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata)
             }
             // Row range: m[i:k, *]
             (SliceSpec::Range(start, end), SliceSpec::All) => slice(a, 0, *start, *end, new_id),
@@ -527,7 +545,8 @@ pub fn slice_multi(a: &Tensor, specs: &[SliceSpec], new_id: TensorId) -> Result<
                 }
 
                 let shape = Shape::new(vec![new_rows, new_cols]);
-                Tensor::new(new_id, shape, data)
+                let metadata = TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata)
             }
             // Full matrix: m[*, *]
             (SliceSpec::All, SliceSpec::All) => Ok(a.clone()),
@@ -540,7 +559,8 @@ pub fn slice_multi(a: &Tensor, specs: &[SliceSpec], new_id: TensorId) -> Result<
                     data.push(a.data_ref()[i * cols + j]);
                 }
                 let shape = Shape::new(vec![new_cols]);
-                Tensor::new(new_id, shape, data)
+                let metadata = TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata)
             }
             (SliceSpec::Range(start, end), SliceSpec::Index(j)) => {
                 // Rows start:end, column j -> vector
@@ -550,7 +570,8 @@ pub fn slice_multi(a: &Tensor, specs: &[SliceSpec], new_id: TensorId) -> Result<
                     data.push(a.data_ref()[i * cols + j]);
                 }
                 let shape = Shape::new(vec![new_rows]);
-                Tensor::new(new_id, shape, data)
+                let metadata = TensorMetadata::new(new_id, None);
+                Tensor::new(new_id, shape, data, metadata)
             }
         }
     } else {
@@ -595,7 +616,8 @@ pub fn stack(tensors: &[&Tensor], axis: usize, new_id: TensorId) -> Result<Tenso
     }
 
     let new_shape = Shape::new(new_dims);
-    Tensor::new(new_id, new_shape, new_data)
+    let metadata = TensorMetadata::new(new_id, None);
+    Tensor::new(new_id, new_shape, new_data, metadata)
 }
 
 #[cfg(test)]
@@ -603,16 +625,18 @@ mod tests {
     use super::*;
     use crate::core::tensor::{Shape, Tensor, TensorId};
 
-    fn tensor_1d(id: u64, vals: Vec<f32>) -> Tensor {
+    fn tensor_1d(_id: u64, vals: Vec<f32>) -> Tensor {
+        let id = TensorId::new();
         let shape = Shape::new(vec![vals.len()]);
-        Tensor::new(TensorId(id), shape, vals).unwrap()
+        let metadata = TensorMetadata::new(id, None);
+        Tensor::new(id, shape, vals, metadata).unwrap()
     }
 
     #[test]
     fn test_add_simple() {
         let a = tensor_1d(1, vec![1.0, 2.0, 3.0]);
         let b = tensor_1d(2, vec![4.0, 5.0, 6.0]);
-        let result = add(&a, &b, TensorId(3)).unwrap();
+        let result = add(&a, &b, TensorId::new()).unwrap();
 
         assert_eq!(result.shape.dims, vec![3]);
         assert_eq!(result.data_ref(), &[5.0, 7.0, 9.0]);
@@ -623,10 +647,12 @@ mod tests {
         let a = tensor_1d(1, vec![1.0, 2.0, 3.0]);
         let b = tensor_1d(2, vec![4.0, 5.0, 6.0]);
 
-        let prod = multiply(&a, &b, TensorId(3)).unwrap();
+        let prod = multiply(&a, &b, TensorId::new()).unwrap();
+
         assert_eq!(prod.data_ref(), &[4.0, 10.0, 18.0]);
 
-        let ratio = divide(&b, &a, TensorId(4)).unwrap();
+        let ratio = divide(&b, &a, TensorId::new()).unwrap();
+
         assert_eq!(ratio.data_ref(), &[4.0, 2.5, 2.0]);
     }
 
@@ -644,7 +670,8 @@ mod tests {
             ((1.0_f32 - 1.0_f32).powi(2) + (0.0_f32 - 1.0_f32).powi(2) + 0.0f32).sqrt();
         assert!((dist - expected_dist).abs() < 1e-6);
 
-        let n = normalize_1d(&b, TensorId(3)).unwrap();
+        let n = normalize_1d(&b, TensorId::new()).unwrap();
+
         let norm_n = l2_norm_1d(&n).unwrap();
         assert!((norm_n - 1.0).abs() < 1e-6);
     }
@@ -655,7 +682,8 @@ mod tests {
         let b = tensor_1d(2, vec![3.0, 4.0]);
 
         // Stack [2] and [2] -> [2, 2] matrix
-        let stacked = stack(&[&a, &b], 0, TensorId(3)).unwrap();
+        let stacked = stack(&[&a, &b], 0, TensorId::new()).unwrap();
+
         assert_eq!(stacked.shape.dims, vec![2, 2]);
         assert_eq!(stacked.data_ref(), &[1.0, 2.0, 3.0, 4.0]);
     }

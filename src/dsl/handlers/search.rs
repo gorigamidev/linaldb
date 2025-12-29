@@ -133,8 +133,10 @@ pub fn build_search_query_plan(
         let query_val = parse_single_value(vector_str, line_no)?;
         let query_tensor = match query_val {
             Value::Vector(data) => {
-                use crate::core::tensor::{Shape, Tensor, TensorId};
-                Tensor::new(TensorId(0), Shape::new(vec![data.len()]), data).map_err(|e| {
+                use crate::core::tensor::{Shape, Tensor, TensorId, TensorMetadata};
+                let id = TensorId::new();
+                let metadata = TensorMetadata::new(id, None);
+                Tensor::new(id, Shape::new(vec![data.len()]), data, metadata).map_err(|e| {
                     DslError::Parse {
                         line: line_no,
                         msg: e,
@@ -182,7 +184,7 @@ pub fn build_search_query_plan(
                 msg: "Expected LIMIT <k>".into(),
             });
         }
-        
+
         let where_clause = limit_split[0].trim();
         let k_str = limit_split[1].trim();
         let k: usize = k_str.parse().map_err(|_| DslError::Parse {
@@ -205,8 +207,10 @@ pub fn build_search_query_plan(
         let query_val = parse_single_value(vector_str, line_no)?;
         let query_tensor = match query_val {
             Value::Vector(data) => {
-                use crate::core::tensor::{Shape, Tensor, TensorId};
-                Tensor::new(TensorId(0), Shape::new(vec![data.len()]), data).map_err(|e| {
+                use crate::core::tensor::{Shape, Tensor, TensorId, TensorMetadata};
+                let id = TensorId::new();
+                let metadata = TensorMetadata::new(id, None);
+                Tensor::new(id, Shape::new(vec![data.len()]), data, metadata).map_err(|e| {
                     DslError::Parse {
                         line: line_no,
                         msg: e,

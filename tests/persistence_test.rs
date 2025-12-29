@@ -54,12 +54,14 @@ fn create_test_dataset(name: &str) -> Dataset {
 }
 
 /// Helper to create a test tensor
-fn create_test_tensor(id: u64, dims: Vec<usize>) -> Tensor {
+fn create_test_tensor(_id: u64, dims: Vec<usize>) -> Tensor {
     let shape = Shape::new(dims);
+    let id = TensorId::new();
     let num_elements = shape.num_elements();
     let data: Vec<f32> = (0..num_elements).map(|i| i as f32).collect();
+    let metadata = linal::core::tensor::TensorMetadata::new(id, None);
 
-    Tensor::new(TensorId(id), shape, data).unwrap()
+    Tensor::new(id, shape, data, metadata).unwrap()
 }
 
 #[test]

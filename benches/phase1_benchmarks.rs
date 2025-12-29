@@ -42,7 +42,9 @@ fn zero_copy_benchmark(c: &mut Criterion) {
     // Baseline: Cloning a tensor (standard behavior)
     group.bench_function("tensor_clone_10k", |b| {
         // Setup a tensor
-        let t = Tensor::new(TensorId(1), shape.clone(), data_vec.clone()).unwrap();
+        let id = TensorId::new();
+        let metadata = linal::core::tensor::TensorMetadata::new(id, None);
+        let t = Tensor::new(id, shape.clone(), data_vec.clone(), metadata).unwrap();
         b.iter(|| {
             // Measure deep copy cost
             let _clone = black_box(t.clone());
@@ -53,7 +55,9 @@ fn zero_copy_benchmark(c: &mut Criterion) {
     #[cfg(feature = "zero-copy")]
     group.bench_function("tensor_share_10k", |b| {
         // Setup a shared tensor
-        let t = Tensor::from_shared(TensorId(1), shape.clone(), data_arc.clone()).unwrap();
+        let id = TensorId::new();
+        let metadata = std::sync::Arc::new(linal::core::tensor::TensorMetadata::new(id, None));
+        let t = Tensor::from_shared(id, shape.clone(), data_arc.clone(), metadata).unwrap();
         b.iter(|| {
             // Measure Arc cloning cost (should be near instant)
             let _shared = black_box(t.share());

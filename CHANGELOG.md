@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python/WASM integration
 - Native ML operators (KNN, clustering, PCA)
 
+## [0.1.7] - 2025-12-28
+
+### Added
+
+- **Phase 2: Dataset as Reference Graph**
+  - **Formal Reference System**: Datasets now serve as semantic views using `ResourceReference`.
+  - **DatasetGraph**: Recursive resolver supporting transitive links (View of a View) and cycle detection.
+  - **Semantic Roles**: Introduced `ColumnRole` (Feature, Target, Weight, Guid) for rich metadata.
+  - **Reference Persistence**: Support for saving lightweight Dataset views as JSON metadata.
+  - **Hybrid Storage**: Maintained Parquet materialization by default for portable data sharing.
+  - **Zero-Copy Chain**: Guaranteed shared memory access across arbitrary reference depths.
+  - **Verification Suite**: Dedicated tests and examples for Graph resolution and Zero-copy guarantees.
+
 ## [0.1.6] - 2025-12-27
 
 ### Added
@@ -348,7 +361,8 @@ LINAL is positioned as:
 
 ---
 
-[Unreleased]: https://github.com/gorigami/linal/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/gorigami/linal/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/gorigami/linal/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/gorigami/linal/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/gorigami/linal/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/gorigami/linal/compare/v0.1.3...v0.1.4

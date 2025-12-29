@@ -13,7 +13,11 @@ fn test_zero_copy_guarantee() {
     execute_script(&mut db, script).unwrap();
 
     let ds = db.get_tensor_dataset("test_ds").unwrap();
-    let col_tensor_id = ds.get_tensor_id("c1").unwrap();
+    let col_ref = ds.get_reference("c1").unwrap();
+    let col_tensor_id = match col_ref {
+        linal::core::dataset::ResourceReference::Tensor { id } => *id,
+        _ => panic!("Expected tensor reference"),
+    };
 
     // Get tensor from names
     let entry = db.active_instance().get_tensor_id("v1").unwrap();

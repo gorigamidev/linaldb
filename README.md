@@ -19,9 +19,9 @@ DATASET analytics COLUMNS (
 )
 ```
 
-### 2. Tensor-First Views (New!)
+### 2. Dataset as Reference Graph (New!)
 
-Create zero-copy dataset views directly from named tensors. Ideal for high-performance machine learning workflows where data already exists as tensors. Use dot notation for direct integration into any mathematical expression.
+Datasets in LINAL are now formal **Reference Graphs**. They serve as semantic views over existing data, referencing actual tensors or other dataset columns without duplication. This enables powerful features like virtual datasets and shared data structures.
 
 ```sql
 -- Create tensors
@@ -29,17 +29,18 @@ VECTOR prices = [10.0, 20.0, 30.0]
 VECTOR qtys   = [5.0, 10.0, 2.0]
 
 -- Create a zero-copy dataset view
+-- This stores ResourceReferences, not the data itself.
 LET ds = dataset("sales_view")
 ds.add_column("price", prices)
 ds.add_column("quantity", qtys)
 
--- Direct Math Integration (Symbol Resolution)
+-- Derived Views: Datasets can point to other datasets
+-- ds2.total -> ds1.price * ds1.quantity (Zero-copy chain)
 LET revenue = ds.price * ds.quantity
-
--- Reverse Integration (Add result back to dataset)
 ds.add_column("total", revenue)
 
 -- Materialize & Save to Parquet
+-- Regular SAVE materializes into Parquet for portability.
 SAVE DATASET sales_view TO "sales.parquet"
 ```
 

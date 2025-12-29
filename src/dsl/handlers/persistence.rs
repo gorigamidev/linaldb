@@ -1,6 +1,8 @@
 use crate::core::storage::{ParquetStorage, StorageEngine};
 use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
+use std::fs;
+use std::path::PathBuf;
 
 /// Handle SAVE command
 /// Syntax: SAVE DATASET dataset_name TO "path"
@@ -20,6 +22,35 @@ pub fn handle_save(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
     }
 }
 
+/// Helper to resolve relative paths to data_dir/db_name/path
+fn resolve_persistence_path(db: &TensorDb, path: &str) -> String {
+    let path_buf = PathBuf::from(path);
+    if path_buf.is_absolute() {
+        return path.to_string();
+    }
+
+    // Check if it already looks like it's inside a managed directory
+    if path.starts_with("./data") {
+        return path.to_string();
+    }
+
+    // If it's a simple filename or a relative path, put it in data_dir/db_name/
+    let mut resolved = db.config.storage.data_dir.clone();
+    resolved.push(&db.active_instance().name);
+
+    // If path is just a filename, this works. If it's "subdir/file", it also works.
+    if !path.is_empty() {
+        resolved.push(path);
+    }
+
+    // Ensure parent exists
+    if let Some(parent) = resolved.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    resolved.to_string_lossy().into_owned()
+}
+
 fn handle_save_dataset(
     db: &mut TensorDb,
     rest: &str,
@@ -30,13 +61,14 @@ fn handle_save_dataset(
     // Check for " TO " keyword
     let (dataset_name, path) = if let Some(idx) = rest.find(" TO ") {
         let name = rest[..idx].trim();
-        let p = rest[idx + 4..].trim().trim_matches('"').to_string();
-        (name, p)
+        let p = rest[idx + 4..].trim().trim_matches('"');
+        (name, resolve_persistence_path(db, p))
     } else {
-        // Default path: data_dir / active_db
-        let mut p = db.config.storage.data_dir.clone();
-        p.push(&db.active_instance().name);
-        (rest, p.to_string_lossy().into_owned())
+        // Default path: data_dir / active_db / dataset_name.parquet (implicit)
+        // Actually, the storage engine handles the filename if it's a directory.
+        // But here we need a path.
+        let p = resolve_persistence_path(db, "");
+        (rest, p)
     };
 
     // Get dataset from store using public method
@@ -75,13 +107,11 @@ fn handle_save_tensor(
     // Check for " TO " keyword
     let (tensor_name, path) = if let Some(idx) = rest.find(" TO ") {
         let name = rest[..idx].trim();
-        let p = rest[idx + 4..].trim().trim_matches('"').to_string();
-        (name, p)
+        let p = rest[idx + 4..].trim().trim_matches('"');
+        (name, resolve_persistence_path(db, p))
     } else {
-        // Default path: data_dir / active_db
-        let mut p = db.config.storage.data_dir.clone();
-        p.push(&db.active_instance().name);
-        (rest, p.to_string_lossy().into_owned())
+        let p = resolve_persistence_path(db, "");
+        (rest, p)
     };
 
     // Get tensor from db
@@ -136,17 +166,24 @@ fn handle_load_dataset(
     // Check for " FROM " keyword
     let (dataset_name, path) = if let Some(idx) = rest.find(" FROM ") {
         let name = rest[..idx].trim();
-        let p = rest[idx + 6..].trim().trim_matches('"').to_string();
-        (name, p)
+        let p = rest[idx + 6..].trim().trim_matches('"');
+        (name, resolve_persistence_path(db, p))
     } else {
-        // Default path: data_dir / active_db
-        let mut p = db.config.storage.data_dir.clone();
-        p.push(&db.active_instance().name);
-        (rest, p.to_string_lossy().into_owned())
+        let p = resolve_persistence_path(db, "");
+        (rest, p)
     };
 
-    // Load from storage
+    // 1. Try loading as a reference-based dataset
     let storage = ParquetStorage::new(&path);
+    if let Ok(dataset) = storage.load_reference_dataset(dataset_name) {
+        db.active_instance_mut().register_tensor_dataset(dataset);
+        return Ok(DslOutput::Message(format!(
+            "Loaded reference dataset '{}' from '{}'",
+            dataset_name, path
+        )));
+    }
+
+    // 2. Fallback to legacy dataset loading
     let dataset = storage
         .load_dataset(dataset_name)
         .map_err(|e| DslError::Parse {
@@ -223,13 +260,11 @@ fn handle_load_tensor(
     // Check for " FROM " keyword
     let (tensor_name, path) = if let Some(idx) = rest.find(" FROM ") {
         let name = rest[..idx].trim();
-        let p = rest[idx + 6..].trim().trim_matches('"').to_string();
-        (name, p)
+        let p = rest[idx + 6..].trim().trim_matches('"');
+        (name, resolve_persistence_path(db, p))
     } else {
-        // Default path: data_dir / active_db
-        let mut p = db.config.storage.data_dir.clone();
-        p.push(&db.active_instance().name);
-        (rest, p.to_string_lossy().into_owned())
+        let p = resolve_persistence_path(db, "");
+        (rest, p)
     };
 
     // Load using storage engine
@@ -285,16 +320,10 @@ fn handle_list_datasets_impl(
     let rest = rest.strip_prefix("DATASETS").unwrap().trim();
 
     let path = if rest.starts_with("FROM ") {
-        rest.strip_prefix("FROM ")
-            .unwrap()
-            .trim()
-            .trim_matches('"')
-            .to_string()
+        let p = rest.strip_prefix("FROM ").unwrap().trim().trim_matches('"');
+        resolve_persistence_path(_db, p)
     } else {
-        // Default path: data_dir / active_db
-        let mut p = _db.config.storage.data_dir.clone();
-        p.push(&_db.active_instance().name);
-        p.to_string_lossy().into_owned()
+        resolve_persistence_path(_db, "")
     };
 
     let storage = ParquetStorage::new(&path);
@@ -320,16 +349,10 @@ fn handle_list_tensors_impl(
     let rest = rest.strip_prefix("TENSORS").unwrap().trim();
 
     let path = if rest.starts_with("FROM ") {
-        rest.strip_prefix("FROM ")
-            .unwrap()
-            .trim()
-            .trim_matches('"')
-            .to_string()
+        let p = rest.strip_prefix("FROM ").unwrap().trim().trim_matches('"');
+        resolve_persistence_path(_db, p)
     } else {
-        // Default path: data_dir / active_db
-        let mut p = _db.config.storage.data_dir.clone();
-        p.push(&_db.active_instance().name);
-        p.to_string_lossy().into_owned()
+        resolve_persistence_path(_db, "")
     };
 
     let storage = ParquetStorage::new(&path);

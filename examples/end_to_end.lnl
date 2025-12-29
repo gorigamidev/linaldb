@@ -6,14 +6,14 @@
 # 0. Restore to another Test
 # ============================================================================
 
-DROP DATABASE ml_research
+DROP DATABASE IF EXISTS ml_research
 
 # ============================================================================
 # 1. PROJECT SETUP
 # ============================================================================
 
 # Create a dedicated database for this analysis
-CREATE DATABASE ml_research
+CREATE DATABASE IF NOT EXISTS ml_research
 USE ml_research
 
 SHOW "=== Database Created ==="

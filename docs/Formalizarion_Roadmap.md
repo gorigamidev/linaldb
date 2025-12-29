@@ -2,19 +2,19 @@
 
 ## Phase 0 – Baseline Stabilization (Checkpoint: "Nothing breaks")
 
-### Objective
+### Phase 0 Objective
 
 Ensure the current engine, DSL, and storage model are stable before formalization.
 
-### Checkpoints
+### Phase 0 Checkpoints
 
-- [ ] Review all exisiting dependencies (Cargo.toml) and remove any that are not needed
-- [ ] All existing tests pass
-- [ ] Examples still execute unchanged
-- [ ] Dataset → Tensor separation remains intact
-- [ ] Benchmarks show no regression
+- [x] Review all exisiting dependencies (Cargo.toml) and remove any that are not needed
+- [x] All existing tests pass
+- [x] Examples still execute unchanged
+- [x] Dataset → Tensor separation remains intact
+- [x] Benchmarks show no regression
 
-### Exit Criteria
+### Phase 0 Exit Criteria
 
 - Zero behavior changes
 - No public API breakage
@@ -24,25 +24,27 @@ Ensure the current engine, DSL, and storage model are stable before formalizatio
 
 ## Phase 1 – Tensor Identity (Checkpoint: "Tensors are addressable")
 
-### Objective
+### Phase 1 Objective
 
 Introduce a formal and stable identity for tensors.
 
-### Tasks
+### Phase 1 Tasks
 
-- [ ] Define `TensorId` (UUID / hash-based)
-- [ ] Create `TensorMetadata` struct
-- [ ] Persist tensor metadata alongside physical storage
-- [ ] Ensure tensors are immutable by default
-- [ ] Allow lookup by `TensorId`
+- [x] Define `TensorId` (UUID / hash-based)
+- [x] Define `TensorMetadata` struct (Provenance).
+- [x] Replace `u64` IDs with globally unique `Uuid`.
+- [x] Implement SHA-256 content-based hashing for Tensors.
+- [x] **Lazy Hashing Implementation**: Defer SHA-256 computation until needed (Recovered >99% performance regression).
+- [x] Explicitly disable mutable access to Tensor data (Enforce Immutability).
+- [x] Update `src/core/storage.rs` to persist/load new metadata.
 
-### Checkpoints
+### Phase 1 Checkpoints
 
-- [ ] Every tensor has a stable identity
-- [ ] Engine can resolve a tensor by ID
-- [ ] No tensor is embedded in a dataset
+- [x] Every tensor has a stable identity
+- [x] Engine can resolve a tensor by ID
+- [x] No tensor is embedded in a dataset
 
-### Exit Criteria
+### Phase 1 Exit Criteria
 
 - Tensors are first-class, identifiable entities
 - No changes required in existing DSL expressions
@@ -51,25 +53,25 @@ Introduce a formal and stable identity for tensors.
 
 ## Phase 2 – Dataset as Reference Graph (Checkpoint: "Datasets are views")
 
-### Objective
+### Phase 2 Objective
 
 Formalize datasets as explicit reference graphs over tensors.
 
-### Tasks
+### Phase 2 Tasks
 
-- [ ] Define `DatasetReference`
-- [ ] Define `DatasetGraph`
-- [ ] Update dataset metadata to declare tensor roles
-- [ ] Support multiple datasets pointing to the same tensor
-- [ ] Keep datasets lightweight and rebuildable
+- [x] Define `DatasetReference`
+- [x] Define `DatasetGraph`
+- [x] Update dataset metadata to declare tensor roles
+- [x] Support multiple datasets pointing to the same tensor
+- [x] Keep datasets lightweight and rebuildable
 
-### Checkpoints
+### Phase 2 Checkpoints
 
-- [ ] Dataset metadata expresses references explicitly
-- [ ] Engine resolves datasets via tensor references
-- [ ] No tensor duplication occurs
+- [x] Dataset metadata expresses references explicitly
+- [x] Engine resolves datasets via tensor references
+- [x] No tensor duplication occurs
 
-### Exit Criteria
+### Phase 2 Exit Criteria
 
 - Dataset = semantic view, not storage
 - Reference graph is explicit and inspectable
@@ -78,11 +80,11 @@ Formalize datasets as explicit reference graphs over tensors.
 
 ## Phase 3 – Execution Context & Lineage (Checkpoint: "Everything is traceable")
 
-### Objective
+### Phase 3 Objective
 
 Track how tensors and datasets are derived.
 
-### Tasks
+### Phase 3 Tasks
 
 - [ ] Introduce `ExecutionContext`
 - [ ] Assign execution IDs
@@ -90,13 +92,13 @@ Track how tensors and datasets are derived.
 - [ ] Attach lineage metadata to derived tensors
 - [ ] Enable inspection of derivation history
 
-### Checkpoints
+### Phase 3 Checkpoints
 
 - [ ] Derived tensors know their origin
 - [ ] Engine can emit lineage info
 - [ ] No orchestration or scheduling introduced
 
-### Exit Criteria
+### Phase 3 Exit Criteria
 
 - Minimal but reliable traceability
 - Reproducible execution paths
@@ -105,11 +107,11 @@ Track how tensors and datasets are derived.
 
 ## Phase 4 – DSL Semantic Expansion (Checkpoint: "Intent is explicit")
 
-### Objective
+### Phase 4 Objective
 
 Make the DSL declarative without increasing complexity.
 
-### Tasks
+### Phase 4 Tasks
 
 - [ ] Add `use` semantic
 - [ ] Add `bind` semantic
@@ -117,13 +119,13 @@ Make the DSL declarative without increasing complexity.
 - [ ] Add `derive` semantic
 - [ ] Map semantics into logical plan
 
-### Checkpoints
+### Phase 4 Checkpoints
 
 - [ ] Existing DSL remains valid
 - [ ] New semantics are optional
 - [ ] Logical planner understands relationships
 
-### Exit Criteria
+### Phase 4 Exit Criteria
 
 - DSL expresses intent and relationships
 - No new mathematical operations added
@@ -132,24 +134,24 @@ Make the DSL declarative without increasing complexity.
 
 ## Phase 5 – Internal Consistency & Validation (Checkpoint: "The model is solid")
 
-### Objective
+### Phase 5 Objective
 
 Validate that all formalized concepts work together coherently.
 
-### Tasks
+### Phase 5 Tasks
 
 - [ ] Cross-validate tensor identity with dataset graphs
 - [ ] Validate lineage consistency
 - [ ] Add introspection APIs
 - [ ] Improve error messages and diagnostics
 
-### Checkpoints
+### Phase 5 Checkpoints
 
 - [ ] Engine can explain what happened and why
 - [ ] Clear errors for invalid references
 - [ ] Strong internal invariants
 
-### Exit Criteria
+### Phase 5 Exit Criteria
 
 - System is internally coherent
 - Users can reason about their data and math
@@ -158,24 +160,24 @@ Validate that all formalized concepts work together coherently.
 
 ## Phase 6 – Usability Hardening (Checkpoint: "People can actually use it")
 
-### Objective
+### Phase 6 Objective
 
 Prepare Linal for real users and external integrations.
 
-### Tasks
+### Phase 6 Tasks
 
 - [ ] Improve CLI feedback (optional)
 - [ ] Add inspection commands (list tensors, datasets, lineage)
 - [ ] Document mental model clearly
 - [ ] Add end-to-end examples
 
-### Checkpoints
+### Phase 6 Checkpoints
 
 - [ ] New users understand core concepts
 - [ ] Scientists can explore results
 - [ ] Data engineers can integrate pipelines
 
-### Exit Criteria
+### Phase 6 Exit Criteria
 
 - Linal is usable, not just powerful
 
@@ -183,24 +185,24 @@ Prepare Linal for real users and external integrations.
 
 ## Phase 7 – Ecosystem Readiness (Checkpoint: "Open but controlled")
 
-### Objective
+### Phase 7 Objective
 
 Prepare for future extensions without implementing them.
 
-### Tasks
+### Phase 7 Tasks
 
 - [ ] Define extension points
 - [ ] Define external tensor consumers (e.g. vector index)
 - [ ] Keep ownership rules strict
 - [ ] Document integration contracts
 
-### Checkpoints
+### Phase 7 Checkpoints
 
 - [ ] External tools can plug in conceptually
 - [ ] Core remains small and stable
 - [ ] No premature feature creep
 
-### Exit Criteria
+### Phase 7 Exit Criteria
 
 - Linal is extensible by design
 - Future work is unblocked

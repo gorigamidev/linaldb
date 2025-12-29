@@ -1,15 +1,15 @@
+use super::reference::ResourceReference;
 use super::schema::DatasetSchema;
-use crate::core::tensor::TensorId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Dataset serves as a structured view over existing tensors in the TensorStore.
-/// It does not own the actual data, but references it via TensorId.
+/// Dataset serves as a structured view over existing tensors or other dataset columns.
+/// It does not own the actual data, but references it via ResourceReference.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Dataset {
     pub name: String,
     pub schema: DatasetSchema,
-    pub columns: HashMap<String, TensorId>,
+    pub columns: HashMap<String, ResourceReference>,
 }
 
 impl Dataset {
@@ -21,19 +21,19 @@ impl Dataset {
         }
     }
 
-    /// Add an existing tensor as a column to this dataset.
-    /// This is a zero-copy operation as it only stores the TensorId.
+    /// Add an existing resource as a column to this dataset.
+    /// This is a zero-copy operation as it only stores the ResourceReference.
     pub fn add_column(
         &mut self,
         name: String,
-        tensor_id: TensorId,
+        reference: ResourceReference,
         schema: super::schema::ColumnSchema,
     ) {
-        self.columns.insert(name, tensor_id);
+        self.columns.insert(name, reference);
         self.schema.add_column(schema);
     }
 
-    pub fn get_tensor_id(&self, column_name: &str) -> Option<TensorId> {
-        self.columns.get(column_name).copied()
+    pub fn get_reference(&self, column_name: &str) -> Option<&ResourceReference> {
+        self.columns.get(column_name)
     }
 }
