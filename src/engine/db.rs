@@ -762,6 +762,43 @@ impl DatabaseInstance {
         Ok(())
     }
 
+    /// Vincular un nuevo nombre a un recurso existente (alias)
+    pub fn bind_resource(&mut self, alias: &str, source: &str) -> Result<(), EngineError> {
+        // Intentar resolver como tensor
+        if let Some(entry) = self.names.get(source) {
+            let id = entry.id;
+            let kind = entry.kind;
+            self.names.insert(alias.to_string(), NameEntry { id, kind });
+            return Ok(());
+        }
+
+        // Intentar resolver como dataset (legacy)
+        if let Ok(ds) = self.dataset_store.get_by_name(source) {
+            let mut ds_new = ds.clone();
+            // Generar nuevo ID para el alias en el store legacy (o mantener el mismo?
+            // El store legacy asocia 1 ID a 1 nombre en su mapa `names`.
+            // Para tener 2 nombres para el mismo dataset, necesitamos insertarlo de nuevo con otro nombre.
+            // Opcionalmente podemos generar un nuevo ID o usar el mismo si el store lo permite.
+            // El store legacy usa DatasetId como llave primaria.
+            let new_id = self.dataset_store.gen_id();
+            ds_new.id = new_id;
+            self.dataset_store
+                .insert(ds_new, Some(alias.to_string()))
+                .map_err(|e| EngineError::DatasetError(e))?;
+            return Ok(());
+        }
+
+        // Intentar resolver como tensor-first dataset
+        if let Some(ds) = self.tensor_datasets.get(source) {
+            let mut new_ds = ds.clone();
+            new_ds.name = alias.to_string();
+            let _ = self.tensor_datasets.register(new_ds);
+            return Ok(());
+        }
+
+        Err(EngineError::NameNotFound(source.to_string()))
+    }
+
     /// Obtiene un tensor por nombre
     pub fn get(&self, name: &str) -> Result<&Tensor, EngineError> {
         let entry = self

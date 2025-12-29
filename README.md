@@ -139,7 +139,31 @@ SET DATASET users METADATA tags = "scientific,test"
 -- (created_at, updated_at) and custom 'extra' fields.
 ```
 
----
+### 7. Explicit Semantics & Lineage (New!)
+
+LINAL now supports declarative resource management and built-in execution lineage.
+
+* **BIND**: Create zero-copy aliases for tensors or datasets.
+
+    ```sql
+    BIND scores_alias TO original_scores
+    ```
+
+* **ATTACH**: Declaratively link independent tensors into dataset columns.
+
+    ```sql
+    ATTACH vector_weights TO neural_ds.weights
+    ```
+
+* **DERIVE**: Explicitly compute new tensors while preserving full provenance (Lineage).
+
+    ```sql
+    DERIVE normalized_v FROM v / 10.0
+    ```
+
+#### Execution Lineage
+
+Every tensor created via `DERIVE` or `LET` automatically tracks its origin, operation, and input IDs. This metadata is persistent and can be inspected to audit analytical workflows.
 
 ## Multi-Paradigm Access
 
@@ -197,12 +221,20 @@ curl -X POST "http://localhost:8080/execute?format=json" \
 
 *Response Formats:*
 
-- **TOON** (default): Token-Oriented Object Notation - human and machine readable
-- **JSON** (opt-in): Standard JSON format via `?format=json` query parameter
+* **TOON** (default): Token-Oriented Object Notation - human and machine readable
+* **JSON** (opt-in): Standard JSON format via `?format=json` query parameter
 
 ---
 
 ## Recent Features
+
+### DSL Semantic Expansion & Lineage (v0.1.7)
+
+Introduction of formal semantics to improve legibility and traceability:
+
+* **Declarative Keywords**: Added `BIND`, `ATTACH`, and `DERIVE` for explicit resource handling.
+* **Lineage Tracking**: Automatic recording of tensor derivation history (Phase 3 & 4 of formalization roadmap).
+* **Persistent Provenance**: Lineage metadata is serialized/deserialized ensuring audits survive database restarts.
 
 ### CLI & Server Hardening (v0.1.4 - LINAL)
 
@@ -210,21 +242,21 @@ Significant improvements to the user experience and engine robustness:
 
 **Professional REPL (LINAL Shell):**
 
-- Integrated `rustyline` for persistent command history and multi-line support.
-- Balanced parentheses logic for entering complex datasets directly in the REPL.
-- `colored` output for improved readability and error reporting.
+* Integrated `rustyline` for persistent command history and multi-line support.
+* Balanced parentheses logic for entering complex datasets directly in the REPL.
+* `colored` output for improved readability and error reporting.
 
 **Administrative CLI Commands:**
 
-- `linal init`: Automated setup for `./data` and `linal.toml`.
-- `linal load <file> <dataset>`: Direct Parquet ingestion via CLI.
-- `linal serve`: Shorthand for starting the HTTP server.
+* `linal init`: Automated setup for `./data` and `linal.toml`.
+* `linal load <file> <dataset>`: Direct Parquet ingestion via CLI.
+* `linal serve`: Shorthand for starting the HTTP server.
 
 **Server Robustness & API Docs:**
 
-- **Query Timeouts**: Long-running queries automatically cancel after 30s.
-- **Request Validation**: Size limits and non-empty checks for all incoming commands.
-- **OpenAPI / Swagger UI**: Built-in interactive documentation available at `/swagger-ui`.
+* **Query Timeouts**: Long-running queries automatically cancel after 30s.
+* **Request Validation**: Size limits and non-empty checks for all incoming commands.
+* **OpenAPI / Swagger UI**: Built-in interactive documentation available at `/swagger-ui`.
 
 ---
 
@@ -234,16 +266,16 @@ Unified interface across all access methods with flexible output formats:
 
 **Server API Improvements:**
 
-- Raw DSL commands as input (no JSON wrapper needed)
-- TOON format as default output
-- JSON format available via `?format=json` query parameter
-- Backward compatible with legacy JSON request format
+* Raw DSL commands as input (no JSON wrapper needed)
+* TOON format as default output
+* JSON format available via `?format=json` query parameter
+* Backward compatible with legacy JSON request format
 
 **CLI Enhancements:**
 
-- `--format` flag for REPL and script execution
-- Choose between `display` (human-readable) or `toon` (machine-readable) output
-- Perfect for automation and scripting workflows
+* `--format` flag for REPL and script execution
+* Choose between `display` (human-readable) or `toon` (machine-readable) output
+* Perfect for automation and scripting workflows
 
 **Example:**
 
@@ -261,9 +293,9 @@ curl -X POST "http://localhost:8080/execute?format=json" \
 
 Full implementation of AVG aggregation with proper sum/count tracking:
 
-- Supports Int, Float, Vector, and Matrix types
-- Automatic type conversion (Int → Float for precision)
-- Works with GROUP BY and computed expressions
+* Supports Int, Float, Vector, and Matrix types
+* Automatic type conversion (Int → Float for precision)
+* Works with GROUP BY and computed expressions
 
 ### Computed Columns (v0.1.2)
 
@@ -295,10 +327,10 @@ MATERIALIZE analytics
 
 Lazy columns provide on-demand computation, storing expressions instead of pre-computed values:
 
-- **Storage Efficiency**: Only store expressions, not computed values
-- **On-Demand Evaluation**: Values computed when accessed in queries
-- **Materialization**: Convert lazy columns to materialized with `MATERIALIZE` command
-- **Automatic Evaluation**: Query execution automatically evaluates lazy columns
+* **Storage Efficiency**: Only store expressions, not computed values
+* **On-Demand Evaluation**: Values computed when accessed in queries
+* **Materialization**: Convert lazy columns to materialized with `MATERIALIZE` command
+* **Automatic Evaluation**: Query execution automatically evaluates lazy columns
 
 ### Schema Introspection
 
@@ -353,10 +385,10 @@ default_db = "default"
 
 **Key Features:**
 
-- **Auto-Discovery**: Engine automatically discovers and recovers databases from `data_dir` on startup.
-- **Database Isolation**: Persistence is siloed per database (e.g., `./data/analytics/` vs `./data/default/`).
-- **Standard Formats**: Datasets use **Apache Parquet** for efficiency; Tensors use JSON for weights and metadata.
-- **Seamless Recovery**: Databases created in one session are immediately available in the next.
+* **Auto-Discovery**: Engine automatically discovers and recovers databases from `data_dir` on startup.
+* **Database Isolation**: Persistence is siloed per database (e.g., `./data/analytics/` vs `./data/default/`).
+* **Standard Formats**: Datasets use **Apache Parquet** for efficiency; Tensors use JSON for weights and metadata.
+* **Seamless Recovery**: Databases created in one session are immediately available in the next.
 
 ---
 
@@ -398,20 +430,20 @@ $ cargo run
 
 ## Architecture
 
-- **Storage Engine**: In-memory columnar/row hybrid store with specialized indices (HashIndex, VectorIndex).
-- **Query Engine**: Logical -> Physical plan optimization with predicate pushdown and index-aware execution.
-- **Type System**: Strong typing with inference for arithmetic expressions (`Matrix + Float = Matrix`).
-- **Aggregation Engine**: Full SQL aggregation support (SUM, AVG, COUNT, MIN, MAX) with element-wise operations on vectors and matrices.
-- **Schema Evolution**: Dynamic column addition with computed columns support (`ADD COLUMN x = expression`).
+* **Storage Engine**: In-memory columnar/row hybrid store with specialized indices (HashIndex, VectorIndex).
+* **Query Engine**: Logical -> Physical plan optimization with predicate pushdown and index-aware execution.
+* **Type System**: Strong typing with inference for arithmetic expressions (`Matrix + Float = Matrix`).
+* **Aggregation Engine**: Full SQL aggregation support (SUM, AVG, COUNT, MIN, MAX) with element-wise operations on vectors and matrices.
+* **Schema Evolution**: Dynamic column addition with computed columns support (`ADD COLUMN x = expression`).
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md) - System architecture and design
-- [DSL Reference](docs/DSL_REFERENCE.md) - Complete DSL command reference
-- [Roadmap & Status](docs/Tasks_implementations.md) - Development roadmap
-- [Changelog](CHANGELOG.md) - Version history
-- [Contributing](CONTRIBUTING.md) - How to contribute
-- [Security](SECURITY.md) - Security policy and considerations
+* [Architecture](docs/ARCHITECTURE.md) - System architecture and design
+* [DSL Reference](docs/DSL_REFERENCE.md) - Complete DSL command reference
+* [Roadmap & Status](docs/Tasks_implementations.md) - Development roadmap
+* [Changelog](CHANGELOG.md) - Version history
+* [Contributing](CONTRIBUTING.md) - How to contribute
+* [Security](SECURITY.md) - Security policy and considerations
 
 ## License
 

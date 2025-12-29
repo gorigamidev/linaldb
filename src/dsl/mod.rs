@@ -150,6 +150,12 @@ pub fn execute_line_with_context(
         handle_show(db, line, line_no)
     } else if line.starts_with("SELECT ") {
         handlers::dataset::handle_select(db, line, line_no)
+    } else if line.starts_with("BIND ") {
+        handlers::semantics::handle_bind(db, line, line_no)
+    } else if line.starts_with("ATTACH ") {
+        handlers::semantics::handle_attach(db, line, line_no)
+    } else if line.starts_with("DERIVE ") {
+        handlers::semantics::handle_derive(db, line, line_no, ctx)
     } else if line.starts_with("DATASET ") {
         handlers::dataset::handle_dataset(db, line, line_no)
     } else if line.starts_with("INSERT INTO ") {

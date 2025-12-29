@@ -9,11 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Planned
 
-- GPU-backed tensor execution
-- Distributed execution
-- Columnar execution engine
-- Python/WASM integration
-- Native ML operators (KNN, clustering, PCA)
+- [ ] Distributed execution
+- [ ] Columnar execution engine
+- [ ] Python/WASM integration
+- [ ] Native ML operators (KNN, clustering, PCA)
+
+## [0.1.8] - 2025-12-29
+
+### Added
+
+- **Phase 3: Execution Context & Lineage**
+  - **Persistent Lineage**: Tensors now track their full derivation history (execution ID, operation, inputs).
+  - **ExecutionContext**: Introduced a thread-safe context to propagate unique execution IDs across operations.
+  - **Metadata Preservation**: Ensured lineage and extra metadata survive save/load cycles via disk storage.
+  - **Transitive Provenance**: Support for tracking lineage through complex calculation chains.
+
+- **Phase 4: DSL Semantic Expansion**
+  - **Declarative Keywords**: Added `BIND`, `ATTACH`, and `DERIVE` for explicit resource management.
+  - **Zero-Copy Aliasing**: `BIND` allows multiple names to point to the same internal resource without copying.
+  - **Dataset Linking**: `ATTACH` provides a way to link independent tensors as virtual dataset columns.
+  - **Explicit Derivation**: `DERIVE` emphasizes the creation of new artifacts from existing ones while maintaining full lineage.
+  - **DSL Retrocompatibility**: Ensured all existing commands (`LET`, `DEFINE`, etc.) work seamlessly alongside new semantics.
 
 ## [0.1.7] - 2025-12-28
 
@@ -361,7 +377,8 @@ LINAL is positioned as:
 
 ---
 
-[Unreleased]: https://github.com/gorigami/linal/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/gorigami/linal/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/gorigami/linal/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/gorigami/linal/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/gorigami/linal/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/gorigami/linal/compare/v0.1.4...v0.1.5

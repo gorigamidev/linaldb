@@ -86,17 +86,17 @@ Track how tensors and datasets are derived.
 
 ### Phase 3 Tasks
 
-- [ ] Introduce `ExecutionContext`
-- [ ] Assign execution IDs
-- [ ] Capture inputs, operations, and outputs
-- [ ] Attach lineage metadata to derived tensors
-- [ ] Enable inspection of derivation history
+- [x] Introduce `ExecutionContext`
+- [x] Assign execution IDs (UUID-based `ExecutionId`)
+- [x] Capture inputs, operations, and outputs in `Lineage`
+- [x] Attach lineage metadata to derived tensors (e.g., `LET b = a * 2`)
+- [x] Enable inspection of derivation history (Persisted in JSON metadata)
 
 ### Phase 3 Checkpoints
 
-- [ ] Derived tensors know their origin
-- [ ] Engine can emit lineage info
-- [ ] No orchestration or scheduling introduced
+- [x] Derived tensors know their origin (`Lineage` field in metadata)
+- [x] Engine can emit lineage info (Verified via `lineage_test.rs`)
+- [x] No orchestration or scheduling introduced (Kept logic within `eval_*` methods)
 
 ### Phase 3 Exit Criteria
 
@@ -113,17 +113,17 @@ Make the DSL declarative without increasing complexity.
 
 ### Phase 4 Tasks
 
-- [ ] Add `use` semantic
-- [ ] Add `bind` semantic
-- [ ] Add `attach` semantic
-- [ ] Add `derive` semantic
-- [ ] Map semantics into logical plan
+- [x] Add `use` semantic (Handled via existing `USE DATABASE`)
+- [x] Add `bind` semantic (`BIND <alias> TO <source>`)
+- [x] Add `attach` semantic (`ATTACH <tensor> TO <ds>.<col>`)
+- [x] Add `derive` semantic (`DERIVE <target> FROM <expr>`)
+- [x] Map semantics into logical plan (Implemented via command handlers)
 
 ### Phase 4 Checkpoints
 
-- [ ] Existing DSL remains valid
-- [ ] New semantics are optional
-- [ ] Logical planner understands relationships
+- [x] Existing DSL remains valid (Verified via `test_dsl_retrocompatibility`)
+- [x] New semantics are optional
+- [x] Logical planner understands relationships
 
 ### Phase 4 Exit Criteria
 
