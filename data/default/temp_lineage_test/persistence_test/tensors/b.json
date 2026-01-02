@@ -1,5 +1,5 @@
 {
-  "id": "aa54469a-323b-4b70-a501-904d2fdce328",
+  "id": "b67de2a7-48c5-49bd-8d55-2baad9d697e3",
   "shape": {
     "dims": [
       2
@@ -10,16 +10,20 @@
     4.0
   ],
   "metadata": {
-    "id": "aa54469a-323b-4b70-a501-904d2fdce328",
-    "created_at": "2025-12-29T20:31:48.310829Z",
+    "id": "b67de2a7-48c5-49bd-8d55-2baad9d697e3",
+    "created_at": "2026-01-02T19:57:54.741404Z",
     "creator": null,
     "lineage": {
-      "execution_id": "485df9e6-1cba-4432-907c-5e7949590355",
+      "execution_id": "bba573b4-e7d3-4176-9c3c-dcfcc7158d4f",
       "operation": "MULTIPLY",
       "inputs": [
-        "df862d6b-e8bb-4feb-9654-aa38f2678b80",
-        "fecd7a6e-94d7-4c7b-acb7-9010265c6896"
+        "804a5fd8-d546-45ae-be7c-05d979fd159e",
+        "81cafec3-60e2-459d-aec5-73f7f530c893"
       ]
     }
-  }
+  },
+  "strides": [
+    1
+  ],
+  "offset": 0
 }

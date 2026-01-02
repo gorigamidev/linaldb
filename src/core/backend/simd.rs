@@ -316,6 +316,89 @@ impl SimdBackend {
         }
         sum.sqrt()
     }
+
+    #[allow(unused_variables)]
+    fn matmul_simd(&self, a: &[f32], b: &[f32], m: usize, n: usize, p: usize, out: &mut [f32]) {
+        // Naive explicit SIMD matmul: C[i, j..j+4] += A[i, k] * B[k, j..j+4]
+        // This requires B to be row-major contiguous.
+
+        // Zero out result first
+        for x in out.iter_mut() {
+            *x = 0.0;
+        }
+
+        for i in 0..m {
+            for k in 0..n {
+                let a_val = a[i * n + k];
+
+                // Broadcast A[i, k]
+                #[cfg(target_arch = "aarch64")]
+                {
+                    use std::arch::aarch64::*;
+                    unsafe {
+                        let va = vdupq_n_f32(a_val);
+                        let mut j = 0;
+                        while j + 4 <= p {
+                            let vb = vld1q_f32(b.as_ptr().add(k * p + j));
+                            // C[i, j] accumulator (load, fma, store)
+                            // We need to accumulate into existing C value?
+                            // Current loop structure:
+                            // C[i, j] = sum(A[i,k]*B[k,j]).
+                            // We are doing outer product style here:
+                            // iterating k inside.
+                            // So we load C[i, j], add A*B, store C[i, j].
+
+                            let c_ptr = out.as_mut_ptr().add(i * p + j);
+                            let vc = vld1q_f32(c_ptr);
+                            let vres = vfmaq_f32(vc, va, vb);
+                            vst1q_f32(c_ptr, vres);
+
+                            j += 4;
+                        }
+                        // Residual
+                        while j < p {
+                            out[i * p + j] += a_val * b[k * p + j];
+                            j += 1;
+                        }
+                    }
+                }
+
+                #[cfg(target_arch = "x86_64")]
+                {
+                    use std::arch::x86_64::*;
+                    unsafe {
+                        let va = _mm_set1_ps(a_val);
+                        let mut j = 0;
+                        // Determine alignment of rows of B and C
+                        // P might not be multiple of 4.
+                        // Alignments might vary per row if P is not aligned.
+                        // Safe to use unaligned loads.
+
+                        while j + 4 <= p {
+                            let vb = _mm_loadu_ps(b.as_ptr().add(k * p + j));
+                            let c_ptr = out.as_mut_ptr().add(i * p + j);
+                            let vc = _mm_loadu_ps(c_ptr);
+                            let vres = _mm_add_ps(vc, _mm_mul_ps(va, vb));
+                            _mm_storeu_ps(c_ptr, vres);
+                            j += 4;
+                        }
+                        // Residual
+                        while j < p {
+                            out[i * p + j] += a_val * b[k * p + j];
+                            j += 1;
+                        }
+                    }
+                }
+
+                #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+                {
+                    for j in 0..p {
+                        out[i * p + j] += a_val * b[k * p + j];
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl ComputeBackend for SimdBackend {
@@ -330,7 +413,13 @@ impl ComputeBackend for SimdBackend {
 
     /// Allocate an output buffer for a tensor.
     fn alloc_output(&self, _ctx: &mut ExecutionContext, len: usize) -> Vec<f32> {
-        vec![0.0; len]
+        // Optimization: explicit uninitialized allocation to avoid zero distribution.
+        // Safety: The buffer is immediately overwritten by SIMD operations.
+        let mut v = Vec::with_capacity(len);
+        unsafe {
+            v.set_len(len);
+        }
+        v
     }
 
     fn add(
@@ -343,11 +432,22 @@ impl ComputeBackend for SimdBackend {
         if a.shape != b.shape {
             return Err("Shape mismatch".into());
         }
-        let len = a.len();
-        let mut data = self.alloc_output(ctx, len);
-        self.add_simd(a.data_ref(), b.data_ref(), &mut data);
-        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
-        Tensor::new(new_id, a.shape.clone(), data, metadata).map_err(|e| e.to_string())
+
+        // SIMD only works correctly on physically contiguous tensors with matching layout
+        if a.is_contiguous() && b.is_contiguous() {
+            let len = a.len();
+            let mut data = self.alloc_output(ctx, len);
+            self.add_simd(a.data_ref(), b.data_ref(), &mut data);
+            let metadata = crate::core::tensor::TensorMetadata::new_with_timestamp(
+                new_id,
+                None,
+                ctx.created_at,
+            );
+            return Tensor::new(new_id, a.shape.clone(), data, metadata).map_err(|e| e.to_string());
+        }
+
+        // Fallback to scalar for strided/broadcast/complex cases
+        self.scalar.add(ctx, a, b, new_id)
     }
 
     fn sub(
@@ -360,11 +460,20 @@ impl ComputeBackend for SimdBackend {
         if a.shape != b.shape {
             return Err("Shape mismatch".into());
         }
-        let len = a.len();
-        let mut data = self.alloc_output(ctx, len);
-        self.sub_simd(a.data_ref(), b.data_ref(), &mut data);
-        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
-        Tensor::new(new_id, a.shape.clone(), data, metadata).map_err(|e| e.to_string())
+
+        if a.is_contiguous() && b.is_contiguous() {
+            let len = a.len();
+            let mut data = self.alloc_output(ctx, len);
+            self.sub_simd(a.data_ref(), b.data_ref(), &mut data);
+            let metadata = crate::core::tensor::TensorMetadata::new_with_timestamp(
+                new_id,
+                None,
+                ctx.created_at,
+            );
+            return Tensor::new(new_id, a.shape.clone(), data, metadata).map_err(|e| e.to_string());
+        }
+
+        self.scalar.sub(ctx, a, b, new_id)
     }
 
     fn multiply(
@@ -377,11 +486,20 @@ impl ComputeBackend for SimdBackend {
         if a.shape != b.shape {
             return Err("Shape mismatch".into());
         }
-        let len = a.len();
-        let mut data = self.alloc_output(ctx, len);
-        self.mul_simd(a.data_ref(), b.data_ref(), &mut data);
-        let metadata = crate::core::tensor::TensorMetadata::new(new_id, None);
-        Tensor::new(new_id, a.shape.clone(), data, metadata).map_err(|e| e.to_string())
+
+        if a.is_contiguous() && b.is_contiguous() {
+            let len = a.len();
+            let mut data = self.alloc_output(ctx, len);
+            self.mul_simd(a.data_ref(), b.data_ref(), &mut data);
+            let metadata = crate::core::tensor::TensorMetadata::new_with_timestamp(
+                new_id,
+                None,
+                ctx.created_at,
+            );
+            return Tensor::new(new_id, a.shape.clone(), data, metadata).map_err(|e| e.to_string());
+        }
+
+        self.scalar.multiply(ctx, a, b, new_id)
     }
 
     fn divide(
@@ -391,6 +509,8 @@ impl ComputeBackend for SimdBackend {
         b: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
+        // TODO: Implement SIMD divide with zero-check or relax safety?
+        // For now, use scalar to ensure zero-check correctness
         self.scalar.divide(ctx, a, b, new_id)
     }
 
@@ -401,6 +521,36 @@ impl ComputeBackend for SimdBackend {
         b: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
+        if a.shape.rank() != 2 || b.shape.rank() != 2 {
+            return Err("matmul expects rank-2 tensors".into());
+        }
+
+        // Use SIMD if contiguous
+        if a.is_contiguous() && b.is_contiguous() {
+            let m = a.shape.dims[0];
+            let n = a.shape.dims[1];
+            let n2 = b.shape.dims[0];
+            let p = b.shape.dims[1];
+
+            if n != n2 {
+                return Err("Dimension mismatch".into());
+            }
+
+            // Allocate output C[m, p]
+            let len = m * p;
+            let mut data = self.alloc_output(ctx, len);
+
+            self.matmul_simd(a.data_ref(), b.data_ref(), m, n, p, &mut data);
+
+            let shape = crate::core::tensor::Shape::new(vec![m, p]);
+            let metadata = crate::core::tensor::TensorMetadata::new_with_timestamp(
+                new_id,
+                None,
+                ctx.created_at,
+            );
+            return Tensor::new(new_id, shape, data, metadata).map_err(|e| e.to_string());
+        }
+
         self.scalar.matmul(ctx, a, b, new_id)
     }
 

@@ -1,6 +1,10 @@
 // src/engine/kernels.rs
 
 use crate::core::tensor::{Shape, Tensor, TensorId, TensorMetadata};
+use rayon::prelude::*;
+
+// Threshold for switching to parallel execution
+const PARALLEL_THRESHOLD: usize = 50_000;
 
 /// Estrategia para combinar dos tensores en una operación elemento a elemento.
 /// Soporta:
@@ -12,17 +16,161 @@ fn elementwise_binary_op(
     new_id: TensorId,
     neutral_a: f32,
     neutral_b: f32,
-    op: impl Fn(f32, f32) -> Result<f32, String>,
+    op: impl Fn(f32, f32) -> Result<f32, String> + Sync + Send,
+) -> Result<Tensor, String> {
+    elementwise_binary_op_with_timestamp(a, b, new_id, neutral_a, neutral_b, op, chrono::Utc::now())
+}
+
+/// Optimized version for operations that cannot fail (Add, Sub, Mul)
+/// Removes Result wrapping per element to allow better optimization/vectorization
+fn elementwise_binary_op_infallible_with_timestamp(
+    a: &Tensor,
+    b: &Tensor,
+    new_id: TensorId,
+    neutral_a: f32,
+    neutral_b: f32,
+    op: impl Fn(f32, f32) -> f32 + Sync + Send,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    if a.shape == b.shape {
+        // Fast path for same shape
+        let len = a.shape.num_elements();
+        let mut data = Vec::with_capacity(len);
+
+        if let (Some(a_slice), Some(b_slice)) = (a.as_contiguous_slice(), b.as_contiguous_slice()) {
+            if len >= PARALLEL_THRESHOLD {
+                // Parallel execution for large tensors
+                a_slice
+                    .par_iter()
+                    .zip(b_slice.par_iter())
+                    .map(|(x, y)| op(*x, *y))
+                    .collect_into_vec(&mut data);
+            } else {
+                // Serial execution for smaller tensors
+                data.extend(a_slice.iter().zip(b_slice.iter()).map(|(x, y)| op(*x, *y)));
+            }
+        } else {
+            // Strided path (currently serial fallback)
+            // TODO: Parallelize strided path if needed
+            match a.shape.rank() {
+                1 => {
+                    let len = a.shape.dims[0];
+                    let a_stride = a.strides[0];
+                    let b_stride = b.strides[0];
+                    let a_data = a.data_ref();
+                    let b_data = b.data_ref();
+
+                    for i in 0..len {
+                        let val_a = a_data[a.offset + i * a_stride];
+                        let val_b = b_data[b.offset + i * b_stride];
+                        data.push(op(val_a, val_b));
+                    }
+                }
+                2 => {
+                    let rows = a.shape.dims[0];
+                    let cols = a.shape.dims[1];
+                    let a_data = a.data_ref();
+                    let b_data = b.data_ref();
+
+                    for i in 0..rows {
+                        let a_row = a.offset + i * a.strides[0];
+                        let b_row = b.offset + i * b.strides[0];
+                        for j in 0..cols {
+                            let val_a = a_data[a_row + j * a.strides[1]];
+                            let val_b = b_data[b_row + j * b.strides[1]];
+                            data.push(op(val_a, val_b));
+                        }
+                    }
+                }
+                _ => {
+                    return Err(format!(
+                        "Strided operations not optimized for rank {}",
+                        a.shape.rank()
+                    ));
+                }
+            }
+        }
+
+        let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
+        return Tensor::new(new_id, a.shape.clone(), data, metadata);
+    }
+
+    // Reuse fallback logic but wrapping op
+    elementwise_binary_op_with_timestamp(
+        a,
+        b,
+        new_id,
+        neutral_a,
+        neutral_b,
+        |x, y| Ok(op(x, y)),
+        timestamp,
+    )
+}
+
+fn elementwise_binary_op_with_timestamp(
+    a: &Tensor,
+    b: &Tensor,
+    new_id: TensorId,
+    neutral_a: f32,
+    neutral_b: f32,
+    op: impl Fn(f32, f32) -> Result<f32, String> + Sync + Send,
+    timestamp: chrono::DateTime<chrono::Utc>,
 ) -> Result<Tensor, String> {
     if a.shape == b.shape {
         let len = a.len();
         let mut data = Vec::with_capacity(len);
-        let a_data = a.data_ref();
-        let b_data = b.data_ref();
-        for i in 0..len {
-            data.push(op(a_data[i], b_data[i])?);
+
+        if let (Some(a_slice), Some(b_slice)) = (a.as_contiguous_slice(), b.as_contiguous_slice()) {
+            if len >= PARALLEL_THRESHOLD {
+                // Parallel logic with Result is tricky because `par_iter` doesn't easily collect Results into Result<Vec>
+                // safely without mutexes or custom reduction.
+                // For now, let's keep the fallible path SERIAL unless we really feel the need to optimize it.
+                // Most hot path ops (add/sub/mul) are handled by the infallible version above.
+                for i in 0..len {
+                    data.push(op(a_slice[i], b_slice[i])?);
+                }
+            } else {
+                for i in 0..len {
+                    data.push(op(a_slice[i], b_slice[i])?);
+                }
+            }
+        } else {
+            // Strided path (Rank 1 & 2 specialized)
+            match a.shape.rank() {
+                1 => {
+                    let a_data = a.data_ref();
+                    let b_data = b.data_ref();
+                    for i in 0..len {
+                        let val_a = a_data[a.offset + i * a.strides[0]];
+                        let val_b = b_data[b.offset + i * b.strides[0]];
+                        data.push(op(val_a, val_b)?);
+                    }
+                }
+                2 => {
+                    let rows = a.shape.dims[0];
+                    let cols = a.shape.dims[1];
+                    let a_data = a.data_ref();
+                    let b_data = b.data_ref();
+                    for i in 0..rows {
+                        let a_row = a.offset + i * a.strides[0];
+                        let b_row = b.offset + i * b.strides[0];
+                        for j in 0..cols {
+                            let val_a = a_data[a_row + j * a.strides[1]];
+                            let val_b = b_data[b_row + j * b.strides[1]];
+                            data.push(op(val_a, val_b)?);
+                        }
+                    }
+                }
+                _ => {
+                    return Err(format!(
+                        "Strided ops not optimized for rank {}",
+                        a.shape.rank()
+                    ))
+                }
+            }
         }
-        let metadata = TensorMetadata::new(new_id, None);
+
+        let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
         return Tensor::new(new_id, a.shape.clone(), data, metadata);
     }
 
@@ -30,42 +178,96 @@ fn elementwise_binary_op(
         // Escalar con cualquier shape (broadcast)
         (0, _) => {
             let shape = b.shape.clone();
-            let len = b.len();
-            let mut data = Vec::with_capacity(len);
-            let scalar = a.data_ref()[0];
-            for &y in b.data_ref().iter() {
-                data.push(op(scalar, y)?);
+            let mut data = Vec::with_capacity(b.shape.num_elements());
+            let scalar = a.data_ref()[a.offset];
+
+            if let Some(b_slice) = b.as_contiguous_slice() {
+                for &y in b_slice {
+                    data.push(op(scalar, y)?);
+                }
+            } else {
+                // Strided fallback
+                // Just use scalar_mul-like logic but with op
+                let b_data = b.data_ref();
+                match b.shape.rank() {
+                    1 => {
+                        let len = b.shape.dims[0];
+                        for i in 0..len {
+                            data.push(op(scalar, b_data[b.offset + i * b.strides[0]])?);
+                        }
+                    }
+                    2 => {
+                        let rows = b.shape.dims[0];
+                        let cols = b.shape.dims[1];
+                        for i in 0..rows {
+                            let row_start = b.offset + i * b.strides[0];
+                            for j in 0..cols {
+                                data.push(op(scalar, b_data[row_start + j * b.strides[1]])?);
+                            }
+                        }
+                    }
+                    _ => return Err("Strided broadcast not supported for high rank".into()),
+                }
             }
-            let metadata = TensorMetadata::new(new_id, None);
+            let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
             Tensor::new(new_id, shape, data, metadata)
         }
         (_, 0) => {
             let shape = a.shape.clone();
-            let len = a.len();
-            let mut data = Vec::with_capacity(len);
-            let scalar = b.data_ref()[0];
-            for &x in a.data_ref().iter() {
-                data.push(op(x, scalar)?);
+            let mut data = Vec::with_capacity(a.shape.num_elements());
+            let scalar = b.data_ref()[b.offset];
+
+            if let Some(a_slice) = a.as_contiguous_slice() {
+                for &x in a_slice {
+                    data.push(op(x, scalar)?);
+                }
+            } else {
+                let a_data = a.data_ref();
+                match a.shape.rank() {
+                    1 => {
+                        let len = a.shape.dims[0];
+                        for i in 0..len {
+                            data.push(op(a_data[a.offset + i * a.strides[0]], scalar)?);
+                        }
+                    }
+                    2 => {
+                        let rows = a.shape.dims[0];
+                        let cols = a.shape.dims[1];
+                        for i in 0..rows {
+                            let row_start = a.offset + i * a.strides[0];
+                            for j in 0..cols {
+                                data.push(op(a_data[row_start + j * a.strides[1]], scalar)?);
+                            }
+                        }
+                    }
+                    _ => return Err("Strided broadcast not supported".into()),
+                }
             }
-            let metadata = TensorMetadata::new(new_id, None);
+            let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
             Tensor::new(new_id, shape, data, metadata)
         }
-        // Vectores (rank 1) – posiblemente longitudes distintas
+        // Vectores (rank 1) – posiblemente longitudes distintas (padding)
         (1, 1) => {
-            let len_a = a.len();
-            let len_b = b.len();
+            let len_a = a.shape.dims[0]; // use dims, logic len
+            let len_b = b.shape.dims[0];
             let len = len_a.max(len_b);
 
             let mut data = Vec::with_capacity(len);
 
+            // Strided access
+            let a_stride = a.strides[0];
+            let b_stride = b.strides[0];
+            let a_data = a.data_ref();
+            let b_data = b.data_ref();
+
             for i in 0..len {
                 let x = if i < len_a {
-                    a.data_ref()[i]
+                    a_data[a.offset + i * a_stride]
                 } else {
                     neutral_a
                 };
                 let y = if i < len_b {
-                    b.data_ref()[i]
+                    b_data[b.offset + i * b_stride]
                 } else {
                     neutral_b
                 };
@@ -73,7 +275,7 @@ fn elementwise_binary_op(
             }
 
             let shape = Shape::new(vec![len]);
-            let metadata = TensorMetadata::new(new_id, None);
+            let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
             Tensor::new(new_id, shape, data, metadata)
         }
         // Otros casos: de momento, error
@@ -95,33 +297,126 @@ fn ensure_same_shape(a: &Shape, b: &Shape) -> Result<(), String> {
 
 /// Suma elemento a elemento: a + b
 pub fn add(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
-    elementwise_binary_op(a, b, new_id, 0.0, 0.0, |x, y| Ok(x + y))
+    add_with_timestamp(a, b, new_id, chrono::Utc::now())
+}
+
+pub fn add_with_timestamp(
+    a: &Tensor,
+    b: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    // Addition is safe in f32 (no panic)
+    elementwise_binary_op_infallible_with_timestamp(a, b, new_id, 0.0, 0.0, |x, y| x + y, timestamp)
 }
 
 /// Resta elemento a elemento: a - b
 pub fn sub(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
-    elementwise_binary_op(a, b, new_id, 0.0, 0.0, |x, y| Ok(x - y))
+    sub_with_timestamp(a, b, new_id, chrono::Utc::now())
+}
+
+pub fn sub_with_timestamp(
+    a: &Tensor,
+    b: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    // Subtraction is safe in f32
+    elementwise_binary_op_infallible_with_timestamp(a, b, new_id, 0.0, 0.0, |x, y| x - y, timestamp)
 }
 
 /// Multiplicación elemento a elemento: a * b
 pub fn multiply(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
-    elementwise_binary_op(a, b, new_id, 1.0, 1.0, |x, y| Ok(x * y))
+    multiply_with_timestamp(a, b, new_id, chrono::Utc::now())
+}
+
+pub fn multiply_with_timestamp(
+    a: &Tensor,
+    b: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    // Multiplication is safe in f32
+    elementwise_binary_op_infallible_with_timestamp(a, b, new_id, 1.0, 1.0, |x, y| x * y, timestamp)
 }
 
 /// División elemento a elemento: a / b
 pub fn divide(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
-    elementwise_binary_op(a, b, new_id, 1.0, 1.0, |x, y| {
-        if y == 0.0 {
-            return Err("Division by zero in element-wise divide".into());
-        }
-        Ok(x / y)
-    })
+    divide_with_timestamp(a, b, new_id, chrono::Utc::now())
+}
+
+pub fn divide_with_timestamp(
+    a: &Tensor,
+    b: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    elementwise_binary_op_with_timestamp(
+        a,
+        b,
+        new_id,
+        1.0,
+        1.0,
+        |x, y| {
+            if y == 0.0 {
+                return Err("Division by zero in element-wise divide".into());
+            }
+            Ok(x / y)
+        },
+        timestamp,
+    )
 }
 
 /// Multiplicación por escalar: s * a
 pub fn scalar_mul(a: &Tensor, s: f32, new_id: TensorId) -> Result<Tensor, String> {
-    let data: Vec<f32> = a.data_ref().iter().map(|x| s * x).collect();
-    let metadata = TensorMetadata::new(new_id, None);
+    scalar_mul_with_timestamp(a, s, new_id, chrono::Utc::now())
+}
+
+pub fn scalar_mul_with_timestamp(
+    a: &Tensor,
+    s: f32,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    let mut data = Vec::with_capacity(a.shape.num_elements());
+
+    if let Some(slice) = a.as_contiguous_slice() {
+        if slice.len() >= PARALLEL_THRESHOLD {
+            // Parallel map
+            slice.par_iter().map(|x| s * x).collect_into_vec(&mut data);
+        } else {
+            data.extend(slice.iter().map(|x| s * x));
+        }
+    } else {
+        // Strided fallback (serial for now)
+        let a_data = a.data_ref();
+        match a.shape.rank() {
+            1 => {
+                let len = a.shape.dims[0];
+                let stride = a.strides[0];
+                for i in 0..len {
+                    data.push(s * a_data[a.offset + i * stride]);
+                }
+            }
+            2 => {
+                let rows = a.shape.dims[0];
+                let cols = a.shape.dims[1];
+                for i in 0..rows {
+                    let row_start = a.offset + i * a.strides[0];
+                    for j in 0..cols {
+                        data.push(s * a_data[row_start + j * a.strides[1]]);
+                    }
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "Strided scalar_mul not optimized for rank {}",
+                    a.shape.rank()
+                ));
+            }
+        }
+    }
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
     Tensor::new(new_id, a.shape.clone(), data, metadata)
 }
 
@@ -186,12 +481,20 @@ pub fn cosine_similarity_1d(a: &Tensor, b: &Tensor) -> Result<f32, String> {
 
 /// Normaliza un tensor rank-1 a norma 1 (L2)
 pub fn normalize_1d(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    normalize_1d_with_timestamp(a, new_id, chrono::Utc::now())
+}
+
+pub fn normalize_1d_with_timestamp(
+    a: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
     let norm = l2_norm_1d(a)?;
     if norm == 0.0 {
         return Err("Cannot normalize a zero vector".into());
     }
     let factor = 1.0 / norm;
-    scalar_mul(a, factor, new_id)
+    scalar_mul_with_timestamp(a, factor, new_id, timestamp)
 }
 
 /// Suma elemento a elemento (RELAXED):
@@ -257,6 +560,15 @@ pub fn divide_relaxed(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor
 /// Matrix multiplication: C = A * B
 /// A: [m, n], B: [n, p] → C: [m, p]
 pub fn matmul(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    matmul_with_timestamp(a, b, new_id, chrono::Utc::now())
+}
+
+pub fn matmul_with_timestamp(
+    a: &Tensor,
+    b: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
     if a.shape.rank() != 2 || b.shape.rank() != 2 {
         return Err("matmul expects rank-2 tensors (matrices)".into());
     }
@@ -275,26 +587,76 @@ pub fn matmul(a: &Tensor, b: &Tensor, new_id: TensorId) -> Result<Tensor, String
 
     let mut data = vec![0.0; m * p];
 
-    for i in 0..m {
-        for j in 0..p {
-            let mut sum = 0.0;
-            for k in 0..n {
-                let a_val = a.data_ref()[i * n + k];
-                let b_val = b.data_ref()[k * p + j];
-                sum += a_val * b_val;
+    let a_strides = &a.strides;
+    let b_strides = &b.strides;
+    let a_data = a.data_ref();
+    let b_data = b.data_ref();
+    let a_offset = a.offset;
+    let b_offset = b.offset;
+
+    // Cost estimation: m * p output elements, each taking n muls and adds.
+    // Total ops ~ 2 * m * n * p.
+    let total_ops = m * n * p;
+
+    if total_ops >= PARALLEL_THRESHOLD {
+        // Parallelize over rows of C (chunks of size p)
+        data.par_chunks_mut(p)
+            .enumerate()
+            .for_each(|(i, row_slice)| {
+                let a_row_base = a_offset + i * a_strides[0];
+                for j in 0..p {
+                    let mut sum = 0.0;
+                    let b_col_base = b_offset + j * b_strides[1];
+                    for k in 0..n {
+                        let a_idx = a_row_base + k * a_strides[1];
+                        let b_idx = b_col_base + k * b_strides[0];
+                        // Unchecked access for performance?
+                        // Currently checked:
+                        // sum += a_data[a_idx] * b_data[b_idx];
+                        // Let's stick to checked or minimal risk for now.
+                        // But we should use safe indexing.
+                        if a_idx < a_data.len() && b_idx < b_data.len() {
+                            sum += a_data[a_idx] * b_data[b_idx];
+                        }
+                    }
+                    row_slice[j] = sum;
+                }
+            });
+    } else {
+        // Serial execution
+        for i in 0..m {
+            let a_row_base = a_offset + i * a_strides[0];
+            for j in 0..p {
+                let mut sum = 0.0;
+                let b_col_base = b_offset + j * b_strides[1];
+                for k in 0..n {
+                    let a_idx = a_row_base + k * a_strides[1];
+                    let b_idx = b_col_base + k * b_strides[0];
+                    if a_idx < a_data.len() && b_idx < b_data.len() {
+                        sum += a_data[a_idx] * b_data[b_idx];
+                    }
+                }
+                data[i * p + j] = sum;
             }
-            data[i * p + j] = sum;
         }
     }
 
     let shape = Shape::new(vec![m, p]);
-    let metadata = TensorMetadata::new(new_id, None);
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
     Tensor::new(new_id, shape, data, metadata)
 }
 
 /// Transpose a rank-2 tensor (matrix)
 /// A: [m, n] → A^T: [n, m]
 pub fn transpose(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    transpose_with_timestamp(a, new_id, chrono::Utc::now())
+}
+
+pub fn transpose_with_timestamp(
+    a: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
     if a.shape.rank() != 2 {
         return Err("transpose expects rank-2 tensor (matrix)".into());
     }
@@ -302,21 +664,37 @@ pub fn transpose(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
     let m = a.shape.dims[0];
     let n = a.shape.dims[1];
 
-    let mut data = vec![0.0; m * n];
+    // New shape: [n, m]
+    let new_shape = Shape::new(vec![n, m]);
 
-    for i in 0..m {
-        for j in 0..n {
-            data[j * m + i] = a.data_ref()[i * n + j];
-        }
-    }
+    // Swap strides: [stride_1, stride_0]
+    let new_strides = vec![a.strides[1], a.strides[0]];
 
-    let shape = Shape::new(vec![n, m]);
-    let metadata = TensorMetadata::new(new_id, None);
-    Tensor::new(new_id, shape, data, metadata)
+    // Zero-copy: share the underlying data Arc
+    let data = a.data.clone();
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
+
+    Tensor::from_shared_strided(
+        new_id,
+        new_shape,
+        data,
+        std::sync::Arc::new(metadata),
+        new_strides,
+        a.offset,
+    )
 }
 
 /// Reshape a tensor to a new shape (total elements must match)
 pub fn reshape(a: &Tensor, new_shape: Shape, new_id: TensorId) -> Result<Tensor, String> {
+    reshape_with_timestamp(a, new_shape, new_id, chrono::Utc::now())
+}
+
+pub fn reshape_with_timestamp(
+    a: &Tensor,
+    new_shape: Shape,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
     let old_elements = a.shape.num_elements();
     let new_elements = new_shape.num_elements();
 
@@ -327,16 +705,62 @@ pub fn reshape(a: &Tensor, new_shape: Shape, new_id: TensorId) -> Result<Tensor,
         ));
     }
 
-    let data = a.data_ref().to_vec();
-    let metadata = TensorMetadata::new(new_id, None);
-    Tensor::new(new_id, new_shape, data, metadata)
+    // Zero-copy: share the underlying data Arc
+    let data = a.data.clone();
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
+    // Note: We wrap metadata in Arc here since from_shared expects it
+    Tensor::from_shared(new_id, new_shape, data, std::sync::Arc::new(metadata))
 }
 
 /// Flatten a tensor to rank-1 (vector)
 pub fn flatten(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    flatten_with_timestamp(a, new_id, chrono::Utc::now())
+}
+
+pub fn flatten_with_timestamp(
+    a: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
     let total_elements = a.shape.num_elements();
-    let data = a.data_ref().to_vec();
-    let metadata = TensorMetadata::new(new_id, None);
+
+    let data = if let Some(slice) = a.as_contiguous_slice() {
+        slice.to_vec()
+    } else {
+        // Materialize strided tensor into contiguous vector
+        // This is necessary because flatten produces a 1D contiguous tensor
+        let mut collected = Vec::with_capacity(total_elements);
+
+        // Use rank-specific iterators for efficiency, similar to other kernels
+        // Or generic iteration since flatten is less critical for perf than matmul?
+        // Let's use a simple generic approach for now to ensure correctness
+        // We can optimize with specific rank handling later if needed.
+
+        match a.shape.rank() {
+            2 => {
+                let rows = a.shape.dims[0];
+                let cols = a.shape.dims[1];
+                let a_data = a.data_ref();
+                for i in 0..rows {
+                    let row_base = a.offset + i * a.strides[0];
+                    for j in 0..cols {
+                        collected.push(a_data[row_base + j * a.strides[1]]);
+                    }
+                }
+            }
+            _ => {
+                // Fallback for N-dims (TODO: implement generic strided iterator)
+                // For now, support rank 2 (matrix) which is the most common case for transpose/flatten
+                return Err(
+                    "Flatten only optimized for contiguous or rank-2 strided tensors currently"
+                        .into(),
+                );
+            }
+        }
+        collected
+    };
+
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
     let shape = Shape::new(vec![total_elements]);
     Tensor::new(new_id, shape, data, metadata)
 }
@@ -349,6 +773,17 @@ pub fn slice(
     start: usize,
     end: usize,
     new_id: TensorId,
+) -> Result<Tensor, String> {
+    slice_with_timestamp(a, dim, start, end, new_id, chrono::Utc::now())
+}
+
+pub fn slice_with_timestamp(
+    a: &Tensor,
+    dim: usize,
+    start: usize,
+    end: usize,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
 ) -> Result<Tensor, String> {
     if dim >= a.shape.rank() {
         return Err(format!(
@@ -372,50 +807,30 @@ pub fn slice(
         ));
     }
 
-    match a.shape.rank() {
-        1 => {
-            // Simple vector slice
-            let data = a.data_ref()[start..end].to_vec();
-            let shape = Shape::new(vec![end - start]);
-            let metadata = TensorMetadata::new(new_id, None);
-            Tensor::new(new_id, shape, data, metadata)
-        }
-        2 => {
-            // Matrix slice
-            let rows = a.shape.dims[0];
-            let cols = a.shape.dims[1];
+    let mut new_dims = a.shape.dims.clone();
+    new_dims[dim] = end - start;
+    let new_shape = Shape::new(new_dims);
 
-            if dim == 0 {
-                // Slice rows
-                let new_rows = end - start;
-                let mut data = Vec::with_capacity(new_rows * cols);
-                for i in start..end {
-                    for j in 0..cols {
-                        data.push(a.data_ref()[i * cols + j]);
-                    }
-                }
-                let shape = Shape::new(vec![new_rows, cols]);
-                let metadata = TensorMetadata::new(new_id, None);
-                Tensor::new(new_id, shape, data, metadata)
-            } else {
-                // Slice columns
-                let new_cols = end - start;
-                let mut data = Vec::with_capacity(rows * new_cols);
-                for i in 0..rows {
-                    for j in start..end {
-                        data.push(a.data_ref()[i * cols + j]);
-                    }
-                }
-                let shape = Shape::new(vec![rows, new_cols]);
-                let metadata = TensorMetadata::new(new_id, None);
-                Tensor::new(new_id, shape, data, metadata)
-            }
-        }
-        _ => Err(format!(
-            "Slice not yet implemented for rank-{} tensors",
-            a.shape.rank()
-        )),
-    }
+    // Calculate new offset
+    // offset += start * stride[dim]
+    let new_offset = a.offset + start * a.strides[dim];
+
+    // Strides remain the same!
+    // Even if we stick to a subset of columns, the stride to get to the next row
+    // is still the full width of the ORIGINAL allocated row.
+
+    // Zero-copy: share data
+    let data = a.data.clone();
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
+
+    Tensor::from_shared_strided(
+        new_id,
+        new_shape,
+        data,
+        std::sync::Arc::new(metadata),
+        a.strides.clone(),
+        new_offset,
+    )
 }
 
 /// Index into a tensor to get a single element
@@ -438,12 +853,10 @@ pub fn index(a: &Tensor, indices: &[usize]) -> Result<f32, String> {
         }
     }
 
-    // Compute flat index
-    let mut flat_idx = 0;
-    let mut stride = 1;
-    for i in (0..a.shape.rank()).rev() {
-        flat_idx += indices[i] * stride;
-        stride *= a.shape.dims[i];
+    // Compute flat index using explicit strides and offset
+    let mut flat_idx = a.offset;
+    for (i, &idx) in indices.iter().enumerate() {
+        flat_idx += idx * a.strides[i];
     }
 
     Ok(a.data_ref()[flat_idx])
@@ -451,11 +864,20 @@ pub fn index(a: &Tensor, indices: &[usize]) -> Result<f32, String> {
 
 /// Index into a tensor and return result as a scalar tensor
 pub fn index_to_scalar(a: &Tensor, indices: &[usize], new_id: TensorId) -> Result<Tensor, String> {
+    index_to_scalar_with_timestamp(a, indices, new_id, chrono::Utc::now())
+}
+
+pub fn index_to_scalar_with_timestamp(
+    a: &Tensor,
+    indices: &[usize],
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
     let value = index(a, indices)?;
     // Create scalar tensor (rank 0)
     let shape = Shape::new(vec![]);
     let data = vec![value];
-    let metadata = TensorMetadata::new(new_id, None);
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
     Tensor::new(new_id, shape, data, metadata)
 }
 
@@ -586,6 +1008,15 @@ pub fn slice_multi(a: &Tensor, specs: &[SliceSpec], new_id: TensorId) -> Result<
 /// All tensors must have the same shape.
 /// Result rank = Input rank + 1
 pub fn stack(tensors: &[&Tensor], axis: usize, new_id: TensorId) -> Result<Tensor, String> {
+    stack_with_timestamp(tensors, axis, new_id, chrono::Utc::now())
+}
+
+pub fn stack_with_timestamp(
+    tensors: &[&Tensor],
+    axis: usize,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
     if tensors.is_empty() {
         return Err("Cannot stack empty list of tensors".into());
     }
@@ -616,7 +1047,7 @@ pub fn stack(tensors: &[&Tensor], axis: usize, new_id: TensorId) -> Result<Tenso
     }
 
     let new_shape = Shape::new(new_dims);
-    let metadata = TensorMetadata::new(new_id, None);
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
     Tensor::new(new_id, new_shape, new_data, metadata)
 }
 

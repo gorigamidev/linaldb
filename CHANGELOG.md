@@ -14,6 +14,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] Python/WASM integration
 - [ ] Native ML operators (KNN, clustering, PCA)
 
+## [0.1.10] - 2026-01-02
+
+### Performance Improvements - Phases 7-11
+
+**Phase 7: Zero-Overhead Push**
+
+- Eliminated metadata syscall overhead (`Utc::now()` bypass for intermediates)
+- Uninitialized allocation to avoid zero-filling
+- Kernel specialization for same-shape operations
+- **Result**: ~10% improvement on small operations
+
+**Phase 8: Zero-Copy Views**
+
+- Metadata-only reshape (O(1) operation)
+- Metadata-only transpose (stride manipulation)
+- Metadata-only slice (view over same Arc)
+- **Result**: Zero allocation for view operations
+
+**Phase 9: Parallel & SIMD Execution**
+
+- Rayon parallelization for large tensors (threshold: 50k elements)
+- SIMD kernels (add, sub, mul, matmul with tiling)
+- Dataset batching (1024-row chunks)
+- **Result**: 2.5x speedup on 100k-element vectors
+
+**Phase 10: Resource Governance**
+
+- Arena-backed tensor allocation via `ExecutionContext`
+- Memory limit enforcement (default 100MB per context)
+- `ResourceError` for limit violations
+- **Result**: Production-ready resource controls
+
+**Phase 11: Allocation Optimization**
+
+- Tensor pooling for common sizes (128-8192 elements)
+- Size threshold optimization (256 elements)
+- Stack allocation for tiny tensors (≤16 elements via SmallVec)
+- **Result**: 3-18% improvement, zero regression
+
+### Added
+
+- `ExecutionContext::with_memory_limit(bytes)` for configurable memory limits
+- `ExecutionContext::acquire_vec()` / `release_vec()` for tensor pooling
+- `TensorPool` with automatic size matching
+- `ResourceError::MemoryLimitExceeded` error type
+- `SmallVec` dependency for stack-based tiny tensor allocation
+
+### Changed
+
+- `ComputeBackend::alloc_output()` now uses three-tier strategy:
+  - Stack allocation for ≤16 elements (zero heap allocation)
+  - Direct allocation for 17-255 elements (avoid pool overhead)
+  - Pool reuse for ≥256 elements (reduce allocation cost)
+- Backend dispatch optimized with SIMD thresholds
+- Dataset operations support batched execution
+
+### Documentation
+
+- Added `docs/DATASET_ARCHITECTURE.md` explaining dataset_legacy vs dataset
+- Updated `docs/PERFORMANCE_ROADMAP_V2.md` with Phase 7-11 completion status
+
 ## [0.1.9] - 2025-12-29
 
 ### Added

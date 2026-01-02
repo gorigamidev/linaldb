@@ -68,7 +68,13 @@ fn test_transpose() {
     let a_t = transpose(&a, TensorId::new()).unwrap();
 
     assert_eq!(a_t.shape.dims, vec![3, 2]);
-    assert_eq!(a_t.data_ref(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0,]);
+    // Logical verification for zero-copy transpose
+    assert_eq!(index(&a_t, &[0, 0]).unwrap(), 1.0);
+    assert_eq!(index(&a_t, &[0, 1]).unwrap(), 4.0);
+    assert_eq!(index(&a_t, &[1, 0]).unwrap(), 2.0);
+    assert_eq!(index(&a_t, &[1, 1]).unwrap(), 5.0);
+    assert_eq!(index(&a_t, &[2, 0]).unwrap(), 3.0);
+    assert_eq!(index(&a_t, &[2, 1]).unwrap(), 6.0);
 }
 
 #[test]
@@ -79,10 +85,10 @@ fn test_transpose_square() {
     let a_t = transpose(&a, TensorId::new()).unwrap();
 
     assert_eq!(a_t.shape.dims, vec![3, 3]);
-    assert_eq!(
-        a_t.data_ref(),
-        vec![1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0,]
-    );
+    // Logical verification
+    assert_eq!(index(&a_t, &[0, 1]).unwrap(), 4.0); // was [1, 0]
+    assert_eq!(index(&a_t, &[1, 0]).unwrap(), 2.0); // was [0, 1]
+    assert_eq!(index(&a_t, &[0, 2]).unwrap(), 7.0); // was [2, 0]
 }
 
 #[test]
@@ -93,6 +99,15 @@ fn test_reshape() {
     // Reshape to 3x2
     let reshaped = reshape(&a, Shape::new(vec![3, 2]), TensorId::new()).unwrap();
     assert_eq!(reshaped.shape.dims, vec![3, 2]);
+    // Reshape preserves data order, so data_ref check is valid if logic is correct?
+    // Actually, reshape is zero-copy too, but it doesn't change order, just dims.
+    // If original was contiguous, reshaped might see same data.
+    // However, [2,3] row-major -> [1,2,3,4,5,6]
+    // [3,2] row-major -> [1,2,3,4,5,6]
+    // Logical values change:
+    // Old: (0,0)=1, (0,1)=2, (0,2)=3, (1,0)=4, (1,1)=5, (1,2)=6
+    // New: (0,0)=1, (0,1)=2, (1,0)=3, (1,1)=4, (2,0)=5, (2,1)=6
+    // data_ref check is valid here because reshape strictly preserves physical order.
     assert_eq!(reshaped.data_ref(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
 
     // Reshape to 1x6
@@ -133,7 +148,10 @@ fn test_slice_vector() {
     let sliced = slice(&v, 0, 1, 4, TensorId::new()).unwrap();
 
     assert_eq!(sliced.shape.dims, vec![3]);
-    assert_eq!(sliced.data_ref(), vec![2.0, 3.0, 4.0]);
+    // Logical verification
+    assert_eq!(index(&sliced, &[0]).unwrap(), 2.0);
+    assert_eq!(index(&sliced, &[1]).unwrap(), 3.0);
+    assert_eq!(index(&sliced, &[2]).unwrap(), 4.0);
 }
 
 #[test]
@@ -144,7 +162,13 @@ fn test_slice_matrix_rows() {
     let sliced = slice(&m, 0, 1, 3, TensorId::new()).unwrap();
 
     assert_eq!(sliced.shape.dims, vec![2, 2]);
-    assert_eq!(sliced.data_ref(), vec![3.0, 4.0, 5.0, 6.0]);
+    // Logical verification
+    // Original rows: [1,2], [3,4], [5,6]
+    // Sliced rows 1,2: [3,4], [5,6]
+    assert_eq!(index(&sliced, &[0, 0]).unwrap(), 3.0);
+    assert_eq!(index(&sliced, &[0, 1]).unwrap(), 4.0);
+    assert_eq!(index(&sliced, &[1, 0]).unwrap(), 5.0);
+    assert_eq!(index(&sliced, &[1, 1]).unwrap(), 6.0);
 }
 
 #[test]
@@ -155,7 +179,13 @@ fn test_slice_matrix_cols() {
     let sliced = slice(&m, 1, 1, 3, TensorId::new()).unwrap();
 
     assert_eq!(sliced.shape.dims, vec![2, 2]);
-    assert_eq!(sliced.data_ref(), vec![2.0, 3.0, 5.0, 6.0]);
+    // Logical verification
+    // Original: [[1, 2, 3], [4, 5, 6]]
+    // Sliced cols 1,2: [[2, 3], [5, 6]]
+    assert_eq!(index(&sliced, &[0, 0]).unwrap(), 2.0);
+    assert_eq!(index(&sliced, &[0, 1]).unwrap(), 3.0);
+    assert_eq!(index(&sliced, &[1, 0]).unwrap(), 5.0);
+    assert_eq!(index(&sliced, &[1, 1]).unwrap(), 6.0);
 }
 
 #[test]

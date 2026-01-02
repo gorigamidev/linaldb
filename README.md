@@ -487,9 +487,42 @@ $ cargo run
 * **Aggregation Engine**: Full SQL aggregation support (SUM, AVG, COUNT, MIN, MAX) with element-wise operations on vectors and matrices.
 * **Schema Evolution**: Dynamic column addition with computed columns support (`ADD COLUMN x = expression`).
 
+## Performance
+
+LINAL has undergone comprehensive performance optimization (Phases 7-11):
+
+### Key Optimizations
+
+* **Zero-Copy Views**: Reshape, transpose, and slice operations are O(1) metadata-only transformations
+* **SIMD Acceleration**: Platform-specific SIMD kernels (NEON, SSE/AVX) for vector operations
+* **Parallel Execution**: Rayon-based parallelization for large tensors (≥50k elements) - **2.5x speedup**
+* **Smart Allocation**: Three-tier strategy (stack/direct/pool) based on tensor size
+* **Memory Management**: Arena allocation with configurable limits (default 100MB per context)
+
+### Allocation Strategy
+
+```
+≤16 elements    → Stack allocation (SmallVec) - zero heap allocation
+17-255 elements → Direct heap allocation - minimal overhead
+≥256 elements   → Tensor pooling - reuse allocations
+```
+
+### Performance Results
+
+| Optimization | Impact |
+|--------------|--------|
+| Zero-overhead metadata | ~10% improvement |
+| Zero-copy views | Zero allocation for transforms |
+| Rayon parallelization | 2.5x on 100k+ element tensors |
+| Tensor pooling | 3-18% improvement |
+| Stack allocation | Zero heap for tiny tensors |
+
+**Benchmark Status**: All operations stable with zero regressions. See [BENCHMARKS.md](docs/BENCHMARKS.md) for details.
+
 ## Documentation
 
 * [Architecture](docs/ARCHITECTURE.md) - System architecture and design
+* [Performance Benchmarks](docs/BENCHMARKS.md) - Performance results and optimization details
 * [DSL Reference](docs/DSL_REFERENCE.md) - Complete DSL command reference
 * [Roadmap & Status](docs/Tasks_implementations.md) - Development roadmap
 * [Changelog](CHANGELOG.md) - Version history

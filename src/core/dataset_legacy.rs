@@ -1,9 +1,14 @@
 use super::tuple::{Schema, Tuple};
 use super::value::{Value, ValueType};
 use chrono::{DateTime, Utc};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+
+// Batch processing constants
+const BATCH_SIZE: usize = 1024;
+const BATCH_PARALLEL_THRESHOLD: usize = 10_000;
 
 /// Unique identifier for datasets
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
@@ -634,6 +639,161 @@ impl Dataset {
 
         self.metadata.update_stats(&self.schema, &self.rows);
         Ok(())
+    }
+
+    // ========== Batch Processing Methods ==========
+
+    /// Get an iterator over batches of rows
+    pub fn batches(&self, batch_size: usize) -> impl Iterator<Item = &[Tuple]> + '_ {
+        self.rows.chunks(batch_size)
+    }
+
+    /// Filter rows in batches for better cache locality and optional parallelization
+    pub fn filter_batched<F>(&self, predicate: F) -> Self
+    where
+        F: Fn(&Tuple) -> bool + Sync + Send,
+    {
+        let filtered_rows: Vec<Tuple> = if self.rows.len() >= BATCH_PARALLEL_THRESHOLD {
+            // Parallel batch processing for large datasets
+            self.rows
+                .par_chunks(BATCH_SIZE)
+                .flat_map(|batch| {
+                    batch
+                        .iter()
+                        .filter(|r| predicate(r))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        } else {
+            // Serial batch processing for smaller datasets
+            self.rows
+                .chunks(BATCH_SIZE)
+                .flat_map(|batch| batch.iter().filter(|r| predicate(r)).cloned())
+                .collect()
+        };
+
+        let mut new_dataset = Self {
+            id: self.id,
+            schema: self.schema.clone(),
+            rows: filtered_rows,
+            metadata: self.metadata.clone(),
+            indices: HashMap::new(),
+            lazy_expressions: self.lazy_expressions.clone(),
+        };
+
+        new_dataset
+            .metadata
+            .update_stats(&self.schema, &new_dataset.rows);
+        new_dataset
+    }
+
+    /// Map over rows in batches for better cache locality and optional parallelization
+    pub fn map_batched<F>(&self, f: F) -> Self
+    where
+        F: Fn(&Tuple) -> Tuple + Sync + Send,
+    {
+        let mapped_rows: Vec<Tuple> = if self.rows.len() >= BATCH_PARALLEL_THRESHOLD {
+            // Parallel batch processing
+            self.rows
+                .par_chunks(BATCH_SIZE)
+                .flat_map(|batch| batch.iter().map(&f).collect::<Vec<_>>())
+                .collect()
+        } else {
+            // Serial batch processing
+            self.rows
+                .chunks(BATCH_SIZE)
+                .flat_map(|batch| batch.iter().map(&f))
+                .collect()
+        };
+
+        let mut new_dataset = Self {
+            id: self.id,
+            schema: self.schema.clone(),
+            rows: mapped_rows,
+            metadata: self.metadata.clone(),
+            indices: HashMap::new(),
+            lazy_expressions: self.lazy_expressions.clone(),
+        };
+
+        new_dataset
+            .metadata
+            .update_stats(&self.schema, &new_dataset.rows);
+        new_dataset
+    }
+
+    /// Select columns in batches for better memory access patterns
+    pub fn select_batched(&self, column_names: &[&str]) -> Result<Self, String> {
+        // Build new schema with selected fields
+        let mut new_fields = Vec::new();
+        let mut field_indices = Vec::new();
+
+        for &col_name in column_names {
+            let idx = self
+                .schema
+                .get_field_index(col_name)
+                .ok_or_else(|| format!("Column '{}' not found", col_name))?;
+            new_fields.push(self.schema.fields[idx].clone());
+            field_indices.push(idx);
+        }
+
+        let new_schema = Arc::new(Schema::new(new_fields));
+
+        // Project rows in batches
+        let new_rows: Vec<Tuple> = if self.rows.len() >= BATCH_PARALLEL_THRESHOLD {
+            // Parallel batch processing
+            self.rows
+                .par_chunks(BATCH_SIZE)
+                .flat_map(|batch| {
+                    batch
+                        .iter()
+                        .map(|row| {
+                            let new_values: Vec<Value> = field_indices
+                                .iter()
+                                .map(|&idx| row.values[idx].clone())
+                                .collect();
+                            Tuple::new(new_schema.clone(), new_values)
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                        .unwrap_or_default()
+                })
+                .collect()
+        } else {
+            // Serial batch processing
+            let mut result = Vec::new();
+            for batch in self.rows.chunks(BATCH_SIZE) {
+                for row in batch {
+                    let new_values: Vec<Value> = field_indices
+                        .iter()
+                        .map(|&idx| row.values[idx].clone())
+                        .collect();
+                    result.push(Tuple::new(new_schema.clone(), new_values)?);
+                }
+            }
+            result
+        };
+
+        // Preserve lazy expressions for selected columns
+        let mut new_lazy_expressions = HashMap::new();
+        for &col_name in column_names {
+            if let Some(expr) = self.lazy_expressions.get(col_name) {
+                new_lazy_expressions.insert(col_name.to_string(), expr.clone());
+            }
+        }
+
+        let mut new_dataset = Self {
+            id: self.id,
+            schema: new_schema.clone(),
+            rows: new_rows,
+            metadata: self.metadata.clone(),
+            indices: HashMap::new(),
+            lazy_expressions: new_lazy_expressions,
+        };
+
+        new_dataset
+            .metadata
+            .update_stats(&new_schema, &new_dataset.rows);
+        Ok(new_dataset)
     }
 }
 

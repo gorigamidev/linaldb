@@ -1,12 +1,37 @@
 use crate::core::tensor::{Tensor, TensorId};
 use crate::engine::context::ExecutionContext;
 
+pub mod pool;
+pub use pool::{PoolStats, TensorPool};
+
 pub trait ComputeBackend: std::fmt::Debug + Send + Sync {
     fn name(&self) -> &str;
 
     /// Allocate an output buffer for a tensor.
-    fn alloc_output(&self, _ctx: &mut ExecutionContext, len: usize) -> Vec<f32> {
-        vec![0.0; len]
+    /// Uses the execution context's tensor pool for reuse when possible.
+    /// For tiny tensors (≤16 elements), uses stack allocation.
+    /// For small tensors (<256 elements), uses direct allocation to avoid pool overhead.
+    fn alloc_output(&self, ctx: &mut ExecutionContext, len: usize) -> Vec<f32> {
+        use smallvec::{smallvec, SmallVec};
+
+        // Stack allocation for tiny tensors (≤16 elements)
+        const STACK_THRESHOLD: usize = 16;
+        // Pool overhead (~40ns) is significant for small allocations (~100ns)
+        const POOL_THRESHOLD: usize = 256;
+
+        if len <= STACK_THRESHOLD {
+            // Stack allocation - zero heap allocation!
+            let small: SmallVec<[f32; 16]> = smallvec![0.0; len];
+            small.to_vec()
+        } else if len < POOL_THRESHOLD {
+            // Direct allocation for small tensors
+            let mut vec = Vec::with_capacity(len);
+            vec.resize(len, 0.0);
+            vec
+        } else {
+            // Pool for medium/large tensors
+            ctx.acquire_vec(len)
+        }
     }
 
     // Binary operations

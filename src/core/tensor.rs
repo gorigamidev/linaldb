@@ -110,6 +110,20 @@ impl TensorMetadata {
         }
     }
 
+    pub fn new_with_timestamp(
+        id: TensorId,
+        creator: Option<String>,
+        timestamp: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id,
+            created_at: timestamp,
+            creator,
+            lineage: None,
+            data_hash: std::sync::OnceLock::new(),
+        }
+    }
+
     pub fn with_lineage(mut self, lineage: Lineage) -> Self {
         self.lineage = Some(lineage);
         self
@@ -168,9 +182,24 @@ pub struct Tensor {
     /// Primary storage using Arc for zero-copy sharing
     pub data: Arc<Vec<f32>>,
     pub metadata: Arc<TensorMetadata>,
+    /// Strides for multi-dimensional indexing (counters for each dimension)
+    pub strides: Vec<usize>,
+    /// Offset from the start of the data buffer
+    pub offset: usize,
 }
 
 impl Tensor {
+    /// Helper to compute default row-major strides for a shape
+    pub fn compute_default_strides(shape: &Shape) -> Vec<usize> {
+        let mut strides = vec![0; shape.rank()];
+        let mut stride = 1;
+        for i in (0..shape.rank()).rev() {
+            strides[i] = stride;
+            stride *= shape.dims[i];
+        }
+        strides
+    }
+
     /// Creates a new tensor, wrapping data in an Arc
     pub fn new(
         id: TensorId,
@@ -188,11 +217,15 @@ impl Tensor {
             ));
         }
 
+        let strides = Self::compute_default_strides(&shape);
+
         Ok(Self {
             id,
             shape,
             data: Arc::new(data),
             metadata: Arc::new(metadata),
+            strides,
+            offset: 0,
         })
     }
 
@@ -204,20 +237,53 @@ impl Tensor {
         metadata: Arc<TensorMetadata>,
     ) -> Result<Self, String> {
         let expected = shape.num_elements();
-        if data.len() != expected {
+        // With strides/offset, the data buffer can be larger than the shape
+        // checking equality is too strict for views.
+        // We should check bounds instead, but for now assuming full-buffer views unless offset is specified
+        // For from_shared (contiguous default), we might want to keep the check loosely
+        // or relax it if we expect to use this for slices later?
+        // Phase 8 plan says from_shared is default contiguous.
+        if data.len() < expected {
             return Err(format!(
-                "Data length {} does not match shape {:?} (expected {})",
+                "Data length {} is too small for shape {:?} (expected {})",
                 data.len(),
                 shape.dims,
                 expected
             ));
         }
 
+        let strides = Self::compute_default_strides(&shape);
+
         Ok(Self {
             id,
             shape,
             data,
             metadata,
+            strides,
+            offset: 0,
+        })
+    }
+
+    /// Creates a tensor from shared data with explicit strides/offset (Advanced)
+    pub fn from_shared_strided(
+        id: TensorId,
+        shape: Shape,
+        data: Arc<Vec<f32>>,
+        metadata: Arc<TensorMetadata>,
+        strides: Vec<usize>,
+        offset: usize,
+    ) -> Result<Self, String> {
+        // Basic validation
+        // Ideally ensure max_index < data.len()
+        // let max_index = offset + (dims[i]-1)*strides[i] ...
+
+        Ok(Self {
+            id,
+            shape,
+            data,
+            metadata,
+            strides,
+            offset,
         })
     }
 
@@ -236,19 +302,116 @@ impl Tensor {
         self.shape.rank()
     }
 
-    /// Número de elementos
+    /// Número de elementos lógicos (basado en shape)
     pub fn len(&self) -> usize {
-        self.data_ref().len()
+        self.shape.num_elements()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.data_ref().is_empty()
+        self.len() == 0
+    }
+
+    /// Checks if the tensor data is contiguous in memory (standard row-major layout)
+    pub fn is_contiguous(&self) -> bool {
+        if self.offset != 0 {
+            return false;
+        }
+
+        // Check strides without allocating a new vector
+        let mut expected_stride = 1;
+        for i in (0..self.shape.rank()).rev() {
+            if self.strides[i] != expected_stride {
+                // Special case: dimension size 1 strides don't strictly matter for density,
+                // but standard row-major convention implies they follow the pattern.
+                // However, for contiguous raw buffer access, we just need to know if
+                // the memory layout matches what we expect for a single slice.
+                // If dim is 1, stride doesn't affect packing, but let's be strict for now
+                // to match compute_default_strides logic.
+                // Actually, if dim is 1, any stride is "valid" for reaching the next element (there isn't one),
+                // but for `as_contiguous_slice` to return the whole range, we usually expect standard packing.
+                return false;
+            }
+            expected_stride *= self.shape.dims[i];
+        }
+        true
+    }
+
+    /// Returns a slice of the data if the tensor is contiguous in memory.
+    /// This handles cases where the tensor is a strict view (slice) of a larger buffer.
+    pub fn as_contiguous_slice(&self) -> Option<&[f32]> {
+        if self.is_contiguous() {
+            let len = self.len();
+            if self.data_ref().len() >= len {
+                return Some(&self.data_ref()[0..len]);
+            }
+        }
+        None
     }
 
     /// Get or compute the cryptographic hash of the tensor data.
     /// This is a lazy operation.
     pub fn data_hash(&self) -> &str {
         self.metadata.compute_hash(&self.data)
+    }
+
+    /// Returns the logical data as a contiguous vector.
+    /// If the tensor is already contiguous, returns a copy of the slice.
+    /// If strided, materializes the view.
+    pub fn to_logical_vec(&self) -> Vec<f32> {
+        if let Some(slice) = self.as_contiguous_slice() {
+            return slice.to_vec();
+        }
+
+        // Slow path: manual iteration
+        // Only Rank 1 and 2 optimized here for now, generic N-dim TODO if needed
+        let mut data = Vec::with_capacity(self.len());
+        match self.shape.rank() {
+            1 => {
+                let len = self.shape.dims[0];
+                let stride = self.strides[0];
+                for i in 0..len {
+                    data.push(self.data[self.offset + i * stride]);
+                }
+            }
+            2 => {
+                let rows = self.shape.dims[0];
+                let cols = self.shape.dims[1];
+                for i in 0..rows {
+                    let row_base = self.offset + i * self.strides[0];
+                    for j in 0..cols {
+                        data.push(self.data[row_base + j * self.strides[1]]);
+                    }
+                }
+            }
+            _ => {
+                // Fallback for N-dims: Use generic indexing (slow but correct)
+                // Or just return empty/error? We should probably try to be correct.
+                // Implementing generic iter is complex here without helper.
+                // Given the project scope, let's just warn or panic?
+                // Or better: Implement recursive filler.
+                // Or simpler: Flat iteration if we can map flat index to strided index?
+                // Let's implement a basic N-dim iterator
+                let mut current_indices = vec![0; self.shape.rank()];
+                for _ in 0..self.len() {
+                    // Calculate offset
+                    let mut off = self.offset;
+                    for (d, &idx) in current_indices.iter().enumerate() {
+                        off += idx * self.strides[d];
+                    }
+                    data.push(self.data[off]);
+
+                    // Advance indices
+                    for j in (0..self.shape.rank()).rev() {
+                        current_indices[j] += 1;
+                        if current_indices[j] < self.shape.dims[j] {
+                            break;
+                        }
+                        current_indices[j] = 0;
+                    }
+                }
+            }
+        }
+        data
     }
 }
 

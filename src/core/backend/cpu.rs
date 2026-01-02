@@ -95,10 +95,12 @@ impl ComputeBackend for CpuBackend {
         b: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        // Matmul needs complex SIMD implementation like blocking/GEMM optimization
-        // and often specialized libraries. Fallback to scalar for now.
-        // Even for matmul, we use scalar for now as it's not yet optimized in simd.rs
-        self.scalar.matmul(ctx, a, b, new_id)
+        // Try SIMD backend which handles contiguous optimization, fallback to scalar otherwise
+        if self.use_simd(a.len()) {
+            self.simd.matmul(ctx, a, b, new_id)
+        } else {
+            self.scalar.matmul(ctx, a, b, new_id)
+        }
     }
 
     fn dot(&self, ctx: &mut ExecutionContext, a: &Tensor, b: &Tensor) -> Result<f32, String> {

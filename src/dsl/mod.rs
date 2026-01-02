@@ -70,10 +70,11 @@ impl fmt::Display for DslOutput {
                     writeln!(f, "Source Op: {}", lineage.operation)?;
                 }
                 writeln!(f, "Shape: {:?}", t.shape.dims)?;
-                if t.data.len() > 10 {
-                    writeln!(f, "Data: {:?}... (total {})", &t.data[..10], t.data.len())?;
+                let data = t.to_logical_vec();
+                if data.len() > 10 {
+                    writeln!(f, "Data: {:?}... (total {})", &data[..10], data.len())?;
                 } else {
-                    writeln!(f, "Data: {:?}", t.data)?;
+                    writeln!(f, "Data: {:?}", data)?;
                 }
                 Ok(())
             }

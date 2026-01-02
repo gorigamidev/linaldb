@@ -82,7 +82,20 @@ fn test_dsl_transpose() {
 
     let a_t = db.get("A_T").unwrap();
     assert_eq!(a_t.shape.dims, vec![3, 2]);
-    assert_eq!(a_t.data_ref(), vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+
+    // With zero-copy transpose, the internal data buffer is shared and thus
+    // has the original layout [1, 2, 3, 4, 5, 6].
+    // We cannot just inspect `data_ref()`. We must verify logical indexing.
+    // Original A: [[1, 2, 3], [4, 5, 6]]
+    // Transposed A: [[1, 4], [2, 5], [3, 6]]
+
+    use linal::engine::kernels::index;
+    assert_eq!(index(a_t, &[0, 0]).unwrap(), 1.0);
+    assert_eq!(index(a_t, &[0, 1]).unwrap(), 4.0);
+    assert_eq!(index(a_t, &[1, 0]).unwrap(), 2.0);
+    assert_eq!(index(a_t, &[1, 1]).unwrap(), 5.0);
+    assert_eq!(index(a_t, &[2, 0]).unwrap(), 3.0);
+    assert_eq!(index(a_t, &[2, 1]).unwrap(), 6.0);
 }
 
 #[test]

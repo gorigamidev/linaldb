@@ -1,18 +1,59 @@
 use crate::core::dataset_legacy::DatasetId;
 use crate::core::tensor::{ExecutionId, TensorId};
 use bumpalo::Bump;
+use chrono::{DateTime, Utc};
+use std::cell::RefCell;
+
+/// Default memory limit per execution context (100MB)
+pub const DEFAULT_MEMORY_LIMIT: usize = 100 * 1024 * 1024;
+
+/// Error type for resource limit violations
+#[derive(Debug, Clone)]
+pub enum ResourceError {
+    MemoryLimitExceeded {
+        requested: usize,
+        limit: usize,
+        current: usize,
+    },
+}
+
+impl std::fmt::Display for ResourceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResourceError::MemoryLimitExceeded {
+                requested,
+                limit,
+                current,
+            } => {
+                write!(
+                    f,
+                    "Memory limit exceeded: requested {} bytes, limit {} bytes, current {} bytes",
+                    requested, limit, current
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ResourceError {}
 
 /// Execution context for a single query/operation.
 /// Manages temporary allocations and ensures automatic cleanup.
 pub struct ExecutionContext {
     /// Unique ID for this execution
     execution_id: ExecutionId,
+    /// Timestamp when execution started
+    pub created_at: DateTime<Utc>,
     /// Arena allocator for temporary values
     arena: Bump,
     /// Temporary tensors to clean up on drop (lazily initialized)
     temp_tensors: Option<Vec<TensorId>>,
     /// Temporary datasets to clean up on drop (lazily initialized)
     temp_datasets: Option<Vec<DatasetId>>,
+    /// Optional memory limit in bytes
+    max_memory_bytes: Option<usize>,
+    /// Tensor allocation pool for reusing Vec<f32>
+    tensor_pool: RefCell<crate::core::backend::TensorPool>,
 }
 
 impl ExecutionContext {
@@ -20,9 +61,25 @@ impl ExecutionContext {
     pub fn new() -> Self {
         Self {
             execution_id: ExecutionId::new(),
+            created_at: Utc::now(),
             arena: Bump::new(),
             temp_tensors: None,
             temp_datasets: None,
+            max_memory_bytes: None,
+            tensor_pool: RefCell::new(crate::core::backend::TensorPool::new()),
+        }
+    }
+
+    /// Create a new execution context with memory limit
+    pub fn with_memory_limit(limit: usize) -> Self {
+        Self {
+            execution_id: ExecutionId::new(),
+            created_at: Utc::now(),
+            arena: Bump::new(),
+            temp_tensors: None,
+            temp_datasets: None,
+            max_memory_bytes: Some(limit),
+            tensor_pool: RefCell::new(crate::core::backend::TensorPool::new()),
         }
     }
 
@@ -30,9 +87,12 @@ impl ExecutionContext {
     pub fn with_capacity(bytes: usize) -> Self {
         Self {
             execution_id: ExecutionId::new(),
+            created_at: Utc::now(),
             arena: Bump::with_capacity(bytes),
             temp_tensors: None,
             temp_datasets: None,
+            max_memory_bytes: None,
+            tensor_pool: RefCell::new(crate::core::backend::TensorPool::new()),
         }
     }
 
@@ -112,6 +172,57 @@ impl ExecutionContext {
         ArenaStats {
             allocated_bytes: self.arena.allocated_bytes(),
         }
+    }
+
+    /// Check if an allocation would exceed memory limit
+    pub fn check_allocation(&self, bytes: usize) -> Result<(), ResourceError> {
+        if let Some(limit) = self.max_memory_bytes {
+            let current = self.arena.allocated_bytes();
+            if current + bytes > limit {
+                return Err(ResourceError::MemoryLimitExceeded {
+                    requested: bytes,
+                    limit,
+                    current,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Allocate a Vec<f32> in the arena for tensor data
+    /// Returns None if memory limit would be exceeded
+    pub fn alloc_tensor_data(&self, size: usize) -> Result<&mut [f32], ResourceError> {
+        let bytes = size * std::mem::size_of::<f32>();
+        self.check_allocation(bytes)?;
+
+        // Allocate uninitialized memory in the arena
+        let slice = self.arena.alloc_slice_fill_default(size);
+        Ok(slice)
+    }
+
+    /// Get current memory usage
+    pub fn memory_usage(&self) -> usize {
+        self.arena.allocated_bytes()
+    }
+
+    /// Get memory limit if set
+    pub fn memory_limit(&self) -> Option<usize> {
+        self.max_memory_bytes
+    }
+
+    /// Acquire a vector from the tensor pool
+    pub fn acquire_vec(&self, size: usize) -> Vec<f32> {
+        self.tensor_pool.borrow_mut().acquire(size)
+    }
+
+    /// Release a vector back to the tensor pool
+    pub fn release_vec(&self, vec: Vec<f32>) {
+        self.tensor_pool.borrow_mut().release(vec);
+    }
+
+    /// Get tensor pool statistics
+    pub fn pool_stats(&self) -> crate::core::backend::PoolStats {
+        self.tensor_pool.borrow().stats()
     }
 }
 

@@ -24,7 +24,7 @@ impl ComputeBackend for ScalarBackend {
         b: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::add(a, b, new_id)
+        kernels::add_with_timestamp(a, b, new_id, _ctx.created_at)
     }
 
     fn sub(
@@ -34,7 +34,7 @@ impl ComputeBackend for ScalarBackend {
         b: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::sub(a, b, new_id)
+        kernels::sub_with_timestamp(a, b, new_id, _ctx.created_at)
     }
 
     fn multiply(
@@ -44,7 +44,7 @@ impl ComputeBackend for ScalarBackend {
         b: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::multiply(a, b, new_id)
+        kernels::multiply_with_timestamp(a, b, new_id, _ctx.created_at)
     }
 
     fn divide(
@@ -54,7 +54,7 @@ impl ComputeBackend for ScalarBackend {
         b: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::divide(a, b, new_id)
+        kernels::divide_with_timestamp(a, b, new_id, _ctx.created_at)
     }
 
     fn matmul(
@@ -64,7 +64,7 @@ impl ComputeBackend for ScalarBackend {
         b: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::matmul(a, b, new_id)
+        kernels::matmul_with_timestamp(a, b, new_id, _ctx.created_at)
     }
 
     fn dot(&self, _ctx: &mut ExecutionContext, a: &Tensor, b: &Tensor) -> Result<f32, String> {
@@ -91,7 +91,7 @@ impl ComputeBackend for ScalarBackend {
         factor: f32,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::scalar_mul(a, factor, new_id)
+        kernels::scalar_mul_with_timestamp(a, factor, new_id, _ctx.created_at)
     }
 
     fn normalize(
@@ -100,7 +100,7 @@ impl ComputeBackend for ScalarBackend {
         a: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::normalize_1d(a, new_id)
+        kernels::normalize_1d_with_timestamp(a, new_id, _ctx.created_at)
     }
 
     fn transpose(
@@ -109,7 +109,7 @@ impl ComputeBackend for ScalarBackend {
         a: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::transpose(a, new_id)
+        kernels::transpose_with_timestamp(a, new_id, _ctx.created_at)
     }
 
     fn flatten(
@@ -118,7 +118,7 @@ impl ComputeBackend for ScalarBackend {
         a: &Tensor,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::flatten(a, new_id)
+        kernels::flatten_with_timestamp(a, new_id, _ctx.created_at)
     }
 
     fn reshape(
@@ -128,7 +128,7 @@ impl ComputeBackend for ScalarBackend {
         new_shape: crate::core::tensor::Shape,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::reshape(a, new_shape, new_id)
+        kernels::reshape_with_timestamp(a, new_shape, new_id, _ctx.created_at)
     }
 
     fn stack(
@@ -138,6 +138,6 @@ impl ComputeBackend for ScalarBackend {
         axis: usize,
         new_id: TensorId,
     ) -> Result<Tensor, String> {
-        kernels::stack(tensors, axis, new_id)
+        kernels::stack_with_timestamp(tensors, axis, new_id, _ctx.created_at)
     }
 }
