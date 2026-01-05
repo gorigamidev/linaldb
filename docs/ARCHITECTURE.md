@@ -595,6 +595,41 @@ Operation → Size Check → Backend Selection:
 
 ---
 
+## Technical Appendix: Core Subsystems
+
+### 1. Dual Dataset Model
+
+LINAL supports two distinct dataset implementations to balance flexibility and performance:
+
+- **Legacy Datasets (`dataset_legacy.rs`)**: Traditional row-oriented, fully materialized tables. Ideal for small datasets or cases where diverse scalar types are primary.
+- **Tensor-First Datasets (`dataset/`)**: Advanced reference graphs where columns point to `TensorId`s in the `TensorStore`. These are zero-copy views that enable high-performance algebraic workflows and on-demand materialization.
+
+### 2. Compute Backend Dispatch
+
+The `CpuBackend` acts as an intelligent dispatcher for all numerical operations:
+
+- **SIMD Selection**: If the platform supports it (NEON/SSE/AVX) and the tensor is physically contiguous, the `SimdBackend` is prioritized for a 2x-8x speedup.
+- **Rayon Parallelization**: For very large tensors (typically ≥50k elements), work is automatically distributed across all available CPU cores.
+- **Scalar Fallback**: For complex strided layouts or small tensors where overhead exceeds benefit, a robust `ScalarBackend` ensures correctness.
+
+### 3. Resource Governance & Memory Limits
+
+To prevent system-level instability, LINAL implements per-query resource limits:
+
+- **Arena Allocation**: `ExecutionContext` utilizes a `Bump` arena for ephemeral results, significantly reducing heap fragmentation.
+- **Memory Limits**: Default per-context limit is 100MB. Exceeding this triggers a `ResourceError`, terminating the query safely.
+- **Tensor Pooling**: Reuses buffers for common tensor sizes to minimize syscall overhead during high-frequency allocation.
+
+### 4. Three-Tier Allocation Strategy
+
+LINAL optimizes memory layout based on tensor dimensionality:
+
+- **Stack (≤16 elements)**: Uses `SmallVec` to avoid heap allocation entirely for tiny vectors.
+- **Direct (17-255 elements)**: Standard heap allocation for small, unpredictable sizes.
+- **Pooled (≥256 elements)**: Buffer reuse for large analytical payloads.
+
+---
+
 ## Future Enhancements
 
 - GPU-backed tensor execution

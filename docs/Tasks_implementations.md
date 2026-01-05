@@ -1,4 +1,7 @@
-# LINAL Evolution: Dataset & Tuple Support
+# LINAL Implementation History (Historical Record)
+
+> [!NOTE]
+> This document serves as a historical record of the development phases of LINAL. For the current system architecture, please refer to [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Phase 0: Preparation
 

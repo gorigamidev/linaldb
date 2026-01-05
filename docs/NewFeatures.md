@@ -1,4 +1,7 @@
-# LINAL Evolution: Dataset & Tuple Support
+# LINAL Evolution & Legacy Planning (Historical)
+
+> [!NOTE]
+> This document contains legacy design notes and early feature planning. Most items described here are now implemented in the core engine.
 
 Building on the existing tensor foundation to create a comprehensive in-memory vectorial database with support for heterogeneous data, datasets (tables), and advanced query operations.
 
@@ -7,18 +10,21 @@ Building on the existing tensor foundation to create a comprehensive in-memory v
 ### ✅ What We Have
 
 **Strong Tensor Foundation:**
+
 - `Tensor` with arbitrary shapes `[d1, d2, ...]` and f32 data
 - `Shape` system supporting scalars, vectors, and matrices
 - `InMemoryTensorStore` with ID-based storage
 - `TensorDb` engine with named tensors and two modes (NORMAL/STRICT)
 
 **Rich Operations:**
+
 - Element-wise: ADD, SUBTRACT, MULTIPLY, DIVIDE
 - Vector operations: DOT, COSINE_SIMILARITY, L2_DISTANCE, NORMALIZE
 - Scalar operations: SCALE
 - Relaxed mode with broadcasting and padding
 
 **DSL & CLI:**
+
 - English-like syntax for tensor operations
 - REPL and script execution modes
 - Clean error handling
@@ -62,6 +68,7 @@ Not SQL's reversed order (`SELECT ... FROM ... WHERE ... ORDER BY`).
 **3. One language, multiple levels**
 
 Same language for:
+
 - Math experiments
 - Feature engineering
 - Analytics workflows
@@ -139,6 +146,7 @@ pub enum ValueType {
 ```
 
 **Features:**
+
 - Type checking and conversion
 - Comparison operators
 - Serialization support
@@ -171,6 +179,7 @@ pub struct Tuple {
 ```
 
 **Features:**
+
 - Schema validation
 - Field access by name or index
 - Type-safe operations
@@ -204,6 +213,7 @@ pub struct DatasetMetadata {
 ```
 
 **Operations:**
+
 - Row operations: `filter`, `map`, `take`, `skip`
 - Column operations: `select`, `rename`, `drop`
 - Aggregations: `sum`, `mean`, `min`, `max`, `count`
@@ -331,6 +341,7 @@ Redesign DSL with **human-centric logical ordering** and clear intent.
 See [DSL Reference](./DSL_REFERENCE.md) for complete syntax documentation.
 
 **Key Features:**
+
 - Logical order: `DATASET FROM → FILTER → SELECT → ORDER`
 - VECTOR and MATRIX shorthands
 - TUPLE syntax with field access
@@ -345,44 +356,52 @@ See [DSL Reference](./DSL_REFERENCE.md) for complete syntax documentation.
 ## Implementation Phases
 
 ### Phase 0: Preparation ✅
+
 - [x] Fix Cargo.toml edition (2024 → 2021)
 - [ ] Create NewFeatures.md documentation
 - [ ] Update task.md with implementation checklist
 
 ### Phase 1: Core Data Types (Estimated: 3-4 hours)
+
 - [ ] Implement `Value` enum with all variants
 - [ ] Implement `Tuple` with schema validation
 - [ ] Implement `Dataset` with basic operations
 - [ ] Add comprehensive unit tests
 
 ### Phase 2: Matrix Operations (Estimated: 2-3 hours)
+
 - [ ] Add MATMUL, TRANSPOSE, RESHAPE, FLATTEN, SLICE
 - [ ] Update DSL parser for matrix syntax
 - [ ] Add integration tests
 
 ### Phase 3: Dataset Operations (Estimated: 4-5 hours)
+
 - [ ] Implement filter, select, join, group_by
 - [ ] Add aggregation functions
 - [ ] Implement sorting
 - [ ] Add tests for all operations
 
 ### Phase 4: Storage & Engine (Estimated: 2-3 hours)
+
 - [ ] Implement `DatasetStore`
 - [ ] Update `TensorDb` to manage datasets
 - [ ] Wire up dataset operations in engine
 
 ### Phase 5: DSL Extensions (Estimated: 3-4 hours)
+
 - [ ] Add dataset definition syntax
 - [ ] Add INSERT, SELECT, WHERE, JOIN syntax
 - [ ] Add CREATE INDEX syntax
 - [ ] Update SHOW command
 
 ### Phase 6: Indexing (Estimated: 3-4 hours)
+
 - [ ] Implement hash index
 - [ ] Implement basic vector index (HNSW or brute-force KNN)
 - [ ] Integrate with query execution
 
 ### Phase 7: Testing & Documentation (Estimated: 2-3 hours)
+
 - [ ] Write comprehensive integration tests
 - [ ] Update README with new features
 - [ ] Add example scripts

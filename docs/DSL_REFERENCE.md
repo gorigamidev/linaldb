@@ -1,330 +1,180 @@
-# TensorDB DSL Reference
+# LINAL DSL Reference
 
-**TensorDB DSL** is a human-oriented language for working with tensors, vectors, matrices, tuples and datasets using a declarative syntax.
-
-It combines:
-- The structure of SQL
-- The expressiveness of linear algebra
-- The clarity of dataset-based workflows
-
-into a single, coherent model.
+**LINAL Script** is a SQL-inspired language designed for working with tensors, vectors, matrices, and structured datasets. It bridges the gap between traditional data querying and numerical computation.
 
 ---
 
-## Design Philosophy
+## 1. Core Principles
 
-TensorDB DSL follows three core rules:
-
-### 1. Logical order over historical syntax
-
-Instructions are written in the order a human reasons about data:
-
-```
-DATASET → FILTER → SELECT → ORDER → LIMIT
-```
-
-**Not** in reversed SQL order.
-
-### 2. Strong abstraction without hiding meaning
-
-- No hidden side effects
-- No overloaded symbols
-- Operations express intent clearly:
-
-```txt
-FILTER age > 25
-SELECT id, score
-```
-
-### 3. One language, multiple levels
-
-Same language for:
-- Math experiments
-- Feature engineering
-- Analytics workflows
-- Dataset transformations
+1. **SQL Familiarity**: Standard SELECT/WHERE/JOIN syntax for data operations.
+2. **First-Class Algebra**: Vectors and matrices are treated as primitive types with native operators.
+3. **Zero-Copy Semantics**: Operations on large datasets favor references and metadata views over data duplication.
+4. **Lineage Tracking**: Automatic tracking of computational history for all derived tensors.
 
 ---
 
-## Core Types
+## 2. Resource Management
 
-### Tensor
+### BIND
 
-Base numeric structure.
-
-```txt
-TENSOR weights [3, 4] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-```
-
-May be:
-- `STRICT` – enforces shape compatibility
-- `NORMAL` – supports relaxed broadcasting (default)
-
-### Vector
-
-Specialized tensor (rank-1):
-
-```txt
-VECTOR v = [1, 2, 3]
-```
-
-Equivalent to:
-
-```txt
-TENSOR v [3] = [1, 2, 3]
-```
-
-### Matrix
-
-Two-dimensional tensor (rank-2):
-
-```txt
-MATRIX m = [
-  [1, 2],
-  [3, 4]
-]
-```
-
-### Tuple
-
-Structured record:
-
-```txt
-TUPLE user = (id: 1, age: 25, score: 0.8)
-```
-
-Tuples are used as:
-- Dataset rows
-- Composite keys
-- Structured parameters
-
-### Dataset
-
-Table-like structure over tuples:
-
-```txt
-DATASET users COLUMNS (id, age, score) = [
-  (1, 25, 0.9),
-  (2, 31, 0.7)
-]
-```
-
----
-
-## Transformations
-
-Transformations are written as **blocks** instead of pipelines.
-
-### Filtering and Projection
-
-```txt
-DATASET result FROM users
-FILTER age > 20
-SELECT id, score
-ORDER BY score DESC
-```
-
-Equivalent to SQL:
+Create a local alias for an existing tensor or dataset.
 
 ```sql
-SELECT id, score FROM users WHERE age > 20 ORDER BY score DESC
+BIND scores_alias TO original_scores
 ```
 
-but written in **logical order**.
+### ATTACH
 
-### Mathematical Operations
+Link an independent tensor into a dataset column (Zero-copy).
 
-```txt
-sum = a + b
+```sql
+ATTACH vector_weights TO neural_ds.weights
 ```
 
-or:
+### DERIVE
 
-```txt
-sum = ADD a b
-```
+Create a new tensor from an expression while preserving full provenance.
 
-### Similarity and Distance
-
-```txt
-sim  = SIMILARITY u, v
-corr = CORRELATE u, v
-dist = DISTANCE u, v
-norm = NORMALIZE v
-```
-
-### Dataset Enrichment
-
-Mix tensors and datasets seamlessly:
-
-```txt
-sim_scores = SIMILARITY_ROWS features WITH vector_w
-
-DATASET enriched FROM users
-ADD COLUMN similarity FROM sim_scores
-FILTER similarity > 0.8
+```sql
+DERIVE normalized_v FROM v / 10.0
 ```
 
 ---
 
-## Strict vs Relaxed Execution
+## 3. Tensor & Matrix Operations
 
-### Strict Mode
+### DEFINE / VECTOR / MATRIX
 
-```txt
-TENSOR a STRICT [3] = [1, 2, 3]
-TENSOR b [5] = [1, 2, 3, 4, 5]
+Create new numeric resources.
 
-a + b   # ERROR (shape mismatch)
+```sql
+VECTOR v = [1.0, 2.0, 3.0]
+MATRIX m = [[1, 2], [3, 4]]
+DEFINE t = TENSOR(2, 2, 2) [1, 2, 3, 4, 5, 6, 7, 8]
 ```
 
-### Relaxed Mode
+### LET
 
-```txt
-[1, 1, 1] + [1, 1, 1, 1, 1]
-→ [2, 2, 2, 1, 1]
+Perform algebraic operations.
+
+```sql
+LET res = v * 2.5
+LET combined = m + matrix_b
 ```
 
-Shorter tensor is padded implicitly.
+### Algebra Handlers
+
+- `MATMUL`: Matrix multiplication
+- `TRANSPOSE`: Swap dimensions
+- `RESHAPE`: Change shape without copying
+- `FLATTEN`: Convert to 1D vector
+- `STACK`: Combine tensors along axis
 
 ---
 
-## Indexing
+## 4. Dataset Operations
 
-### Matrix
+### DATASET
 
-```txt
-row = m[0, *]   # First row
-col = m[*, 1]   # Second column
-elem = m[2, 3]  # Single element
+Define a new dataset schema.
+
+```sql
+DATASET analytics COLUMNS (
+    id: Int,
+    region: String,
+    embedding: Vector(128)
+)
 ```
 
-### Tuple
+### INSERT INTO
 
-```txt
-user.age
-user.score
+Add data to a dataset.
+
+```sql
+INSERT INTO analytics (id, region, embedding) VALUES (1, "North", [0.1, ...])
 ```
 
-### Dataset
+### SELECT (Querying)
 
-```txt
-users.age
-users.embedding
+Standard SQL querying with support for tensor columns.
+
+```sql
+SELECT region, SUM(embedding) 
+FROM analytics 
+WHERE region = "North" 
+GROUP BY region
 ```
 
----
+### ALTER DATASET
 
-## Introspection
+Add columns dynamically.
 
-```txt
-SHOW TENSOR v
-SHOW DATASET users
-SHOW ALL
+```sql
+ALTER DATASET analytics ADD COLUMN total = price * quantity
+ALTER DATASET analytics ADD COLUMN score = complex_expr LAZY
 ```
 
-**Planned:**
+### MATERIALIZE
 
-```txt
-SHOW SHAPE tensor
-SHOW SCHEMA dataset
-SHOW TYPES tuple
-```
+Convert a LAZY column into a physical, materialized column.
 
----
-
-## Complete Examples
-
-### Example 1: Vector Similarity Search
-
-```txt
-# Define product embeddings
-DATASET products COLUMNS (id, name, category, embedding: VECTOR[128]) = [
-  (1, "Laptop", "Electronics", [0.1, 0.2, ...]),
-  (2, "Mouse", "Electronics", [0.15, 0.22, ...]),
-  (3, "Desk", "Furniture", [0.8, 0.1, ...])
-]
-
-# Query vector
-VECTOR query = [0.12, 0.21, ...]
-
-# Find similar products (logical order: FROM → COMPUTE → FILTER → ORDER → LIMIT)
-DATASET similar FROM products
-ADD COLUMN sim = SIMILARITY embedding, query
-FILTER sim > 0.7
-ORDER BY sim DESC
-LIMIT 5
-SELECT id, name, sim
-
-SHOW similar
-```
-
-### Example 2: Matrix Operations
-
-```txt
-# Define matrices
-MATRIX A = [
-  [1, 2, 3],
-  [4, 5, 6]
-]
-
-MATRIX B = [
-  [7, 8],
-  [9, 10],
-  [11, 12]
-]
-
-# Matrix multiplication (A: 2x3, B: 3x2 → C: 2x2)
-MATRIX C = MATMUL A B
-
-# Transpose
-MATRIX A_T = TRANSPOSE A
-
-# Extract rows/columns
-VECTOR row1 = A[0, *]
-VECTOR col2 = A[*, 1]
-
-SHOW C
-SHOW A_T
-```
-
-### Example 3: Dataset Analytics
-
-```txt
-# Sales dataset
-DATASET sales COLUMNS (product_id, category, region, amount, date)
-
-# Aggregate by category (logical order)
-DATASET category_stats FROM sales
-GROUP BY category
-COMPUTE 
-  total = SUM amount,
-  avg = AVG amount,
-  count = COUNT *
-ORDER BY total DESC
-
-# Filter high-value categories
-DATASET top_categories FROM category_stats
-FILTER total > 10000
-SELECT category, total, avg
-
-SHOW top_categories
+```sql
+MATERIALIZE analytics
 ```
 
 ---
 
-## Compilation Model
+## 5. Introspection & Diagnostics
 
-TensorDB DSL compiles into:
+### SHOW
 
-1. **Parsed AST**
-2. **Typed Intermediate Representation**
-3. **Optimized execution plan**
-4. **Runtime tensor engine**
+Inspect any engine resource.
+
+```sql
+SHOW v
+SHOW SCHEMA analytics
+SHOW LINEAGE result
+SHOW ALL DATASETS
+```
+
+### AUDIT
+
+Verify the health and referential integrity of a dataset.
+
+```sql
+AUDIT DATASET diagnostics
+```
+
+### EXPLAIN
+
+Visualize the execution plan for a query.
+
+```sql
+EXPLAIN SELECT * FROM users WHERE id > 10
+```
 
 ---
 
-## Philosophy
+## 6. Persistence
 
-**SQL explains structure.**  
-**TensorDB explains intention.**
+- `SAVE DATASET <name>`: Persist dataset to Parquet.
+- `SAVE TENSOR <name>`: Persist tensor data to JSON.
+- `LOAD DATASET <name>`: Recover dataset from disk.
+- `LIST DATASETS`: Show all persisted datasets.
+
+---
+
+## 7. Instance Management
+
+Manage multiple isolated database instances.
+
+```sql
+CREATE DATABASE research
+USE research
+DROP DATABASE obsolete_db
+SHOW DATABASES
+```
+
+---
+
+**LINAL**: *Where SQL meets Linear Algebra.*

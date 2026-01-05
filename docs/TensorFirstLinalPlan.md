@@ -1,4 +1,7 @@
-# Mini Implementation Plan: Tensor-First Datasets in LINAL
+# Mini Implementation Plan: Tensor-First Datasets (COMPLETED)
+
+> [!NOTE]
+> This plan has been fully implemented as of v0.1.2. Referenced concepts like "Tensor-First Datasets" are now a core part of the LINAL engine.
 
 ## Goal
 
