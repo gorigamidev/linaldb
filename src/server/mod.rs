@@ -464,13 +464,15 @@ async fn submit_job(
                 // NOTE: use_database needs a WRITE lock currently.
                 // If the user specified a target_db different from actual, we might need a write lock even if command is SHOW.
                 // To keep it simple, if target_db is set, we use write lock for now.
-                if target_db.is_some() && target_db.as_ref().unwrap() != &prev_db {
-                    drop(db); // release read lock
-                    let mut db_write = db_arc.write().unwrap();
-                    let _ = db_write.use_database(&target_db.unwrap());
-                    let exec_res = execute_line_shared(&db_write, &command, 1);
-                    let _ = db_write.use_database(&prev_db);
-                    return exec_res;
+                if let Some(db_name) = target_db.as_ref() {
+                    if db_name != &prev_db {
+                        drop(db); // release read lock
+                        let mut db_write = db_arc.write().unwrap();
+                        let _ = db_write.use_database(db_name);
+                        let exec_res = execute_line_shared(&db_write, &command, 1);
+                        let _ = db_write.use_database(&prev_db);
+                        return exec_res;
+                    }
                 }
 
                 execute_line_shared(&db, &command, 1)

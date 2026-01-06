@@ -53,6 +53,6 @@ impl DatasetRegistry {
     pub fn get_by_hash(&self, hash: &str) -> Option<&Dataset> {
         self.datasets
             .values()
-            .find(|ds| ds.metadata.as_ref().map_or(false, |m| m.hash == hash))
+            .find(|ds| ds.metadata.as_ref().is_some_and(|m| m.hash == hash))
     }
 }

@@ -11,6 +11,12 @@ pub struct HashIndex {
     map: HashMap<String, Vec<usize>>,
 }
 
+impl Default for HashIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HashIndex {
     pub fn new() -> Self {
         Self {
@@ -36,7 +42,7 @@ impl HashIndex {
 impl Index for HashIndex {
     fn add(&mut self, row_id: usize, value: &Value) -> Result<(), String> {
         let key = Self::get_key(value);
-        self.map.entry(key).or_insert_with(Vec::new).push(row_id);
+        self.map.entry(key).or_default().push(row_id);
         Ok(())
     }
 

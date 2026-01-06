@@ -19,7 +19,7 @@ fn evaluate_lazy_columns_in_row(
         }
     }
 
-    Tuple::new(dataset.schema.clone(), evaluated_values).map_err(|e| EngineError::InvalidOp(e))
+    Tuple::new(dataset.schema.clone(), evaluated_values).map_err(EngineError::InvalidOp)
 }
 
 /// Trait for physical execution plan nodes
@@ -48,7 +48,7 @@ impl PhysicalPlan for SeqScanExec {
         // Clone all rows and evaluate lazy columns
         let mut rows = Vec::with_capacity(dataset.rows.len());
         for row in &dataset.rows {
-            rows.push(evaluate_lazy_columns_in_row(&dataset, row)?);
+            rows.push(evaluate_lazy_columns_in_row(dataset, row)?);
         }
         Ok(rows)
     }
@@ -106,13 +106,11 @@ impl PhysicalPlan for IndexScanExec {
             EngineError::InvalidOp(format!("Index not found on column '{}'", self.column))
         })?;
 
-        let row_ids = index
-            .lookup(&self.value)
-            .map_err(|e| EngineError::InvalidOp(e))?;
+        let row_ids = index.lookup(&self.value).map_err(EngineError::InvalidOp)?;
 
         let mut evaluated_rows = Vec::new();
         for row in dataset.get_rows_by_ids(&row_ids) {
-            evaluated_rows.push(evaluate_lazy_columns_in_row(&dataset, &row)?);
+            evaluated_rows.push(evaluate_lazy_columns_in_row(dataset, &row)?);
         }
         Ok(evaluated_rows)
     }
@@ -151,12 +149,12 @@ impl PhysicalPlan for VectorSearchExec {
 
         let results = index
             .search(&self.query, self.k)
-            .map_err(|e| EngineError::InvalidOp(e))?;
+            .map_err(EngineError::InvalidOp)?;
         let row_ids: Vec<usize> = results.iter().map(|(id, _)| *id).collect();
 
         let mut evaluated_rows = Vec::new();
         for row in dataset.get_rows_by_ids(&row_ids) {
-            evaluated_rows.push(evaluate_lazy_columns_in_row(&dataset, &row)?);
+            evaluated_rows.push(evaluate_lazy_columns_in_row(dataset, &row)?);
         }
         Ok(evaluated_rows)
     }
@@ -187,7 +185,7 @@ impl PhysicalPlan for ProjectionExec {
                 .collect();
             output_rows.push(
                 Tuple::new(self.output_schema.clone(), new_values)
-                    .map_err(|e| EngineError::InvalidOp(e))?,
+                    .map_err(EngineError::InvalidOp)?,
             );
         }
         Ok(output_rows)
@@ -565,9 +563,8 @@ impl PhysicalPlan for AggregateExec {
             }
 
             values.extend(final_accs); // Then aggregates
-            output_rows.push(
-                Tuple::new(self.schema.clone(), values).map_err(|e| EngineError::InvalidOp(e))?,
-            );
+            output_rows
+                .push(Tuple::new(self.schema.clone(), values).map_err(EngineError::InvalidOp)?);
         }
 
         Ok(output_rows)
@@ -629,7 +626,7 @@ pub fn evaluate_expression(
                 }
                 (Value::Matrix(l), Value::Matrix(r)) => {
                     // Element-wise ops
-                    if l.len() != r.len() || (l.len() > 0 && l[0].len() != r[0].len()) {
+                    if l.len() != r.len() || (!l.is_empty() && l[0].len() != r[0].len()) {
                         return Value::Null; // Mismatch
                     }
                     let mut res = l.clone();

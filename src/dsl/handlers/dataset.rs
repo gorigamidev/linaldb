@@ -243,25 +243,23 @@ pub fn build_select_query_plan(
                 input: Box::new(working_plan),
                 n,
             };
+        } else if clauses_trimmed.starts_with("ORDER BY ") {
+            let (order_str, rem) = split_clause(clauses_trimmed, "ORDER BY", &keywords);
+            let order_string = order_str.to_string();
+            remaining_clauses = rem.to_string();
+            let parts: Vec<&str> = order_string.split_whitespace().collect();
+            let col = parts[0].to_string();
+            let desc = parts.len() > 1 && parts[1].eq_ignore_ascii_case("DESC");
+            working_plan = LogicalPlan::Sort {
+                input: Box::new(working_plan),
+                column: col,
+                ascending: !desc,
+            };
         } else {
-            if clauses_trimmed.starts_with("ORDER BY ") {
-                let (order_str, rem) = split_clause(clauses_trimmed, "ORDER BY", &keywords);
-                let order_string = order_str.to_string();
-                remaining_clauses = rem.to_string();
-                let parts: Vec<&str> = order_string.split_whitespace().collect();
-                let col = parts[0].to_string();
-                let desc = parts.len() > 1 && parts[1].eq_ignore_ascii_case("DESC");
-                working_plan = LogicalPlan::Sort {
-                    input: Box::new(working_plan),
-                    column: col,
-                    ascending: !desc,
-                };
-            } else {
-                return Err(DslError::Parse {
-                    line: line_no,
-                    msg: format!("Unknown clause in SELECT: {}", clauses_trimmed),
-                });
-            }
+            return Err(DslError::Parse {
+                line: line_no,
+                msg: format!("Unknown clause in SELECT: {}", clauses_trimmed),
+            });
         }
     }
 
@@ -346,7 +344,7 @@ pub fn build_dataset_query_plan(
             if idx > 0 && !query_part[idx - 1..].starts_with(' ') {
                 continue; // part of another word
             }
-            if first_keyword_idx.map_or(true, |curr| idx < curr) {
+            if first_keyword_idx.is_none_or(|curr| idx < curr) {
                 first_keyword_idx = Some(idx);
             }
         }
@@ -487,11 +485,7 @@ pub fn build_dataset_query_plan(
                 });
             }
             let col_name = parts[0].to_string();
-            let ascending = if parts.len() > 1 && parts[1] == "DESC" {
-                false
-            } else {
-                true
-            };
+            let ascending = !(parts.len() > 1 && parts[1] == "DESC");
 
             current_plan = LogicalPlan::Sort {
                 input: Box::new(current_plan),
@@ -531,16 +525,17 @@ fn split_clause<'a>(s: &'a str, current_kw: &str, all_kws: &[&str]) -> (&'a str,
     for &kw in all_kws {
         if let Some(idx) = remaining_s.find(kw) {
             // ensure word boundary roughly (space before)
-            if idx > 0 && remaining_s.as_bytes()[idx - 1] == b' ' {
-                if next_kw_idx.map_or(true, |curr| idx < curr) {
-                    next_kw_idx = Some(idx);
-                }
+            if idx > 0
+                && remaining_s.as_bytes()[idx - 1] == b' '
+                && next_kw_idx.is_none_or(|curr| idx < curr)
+            {
+                next_kw_idx = Some(idx);
             }
         }
     }
 
     if let Some(idx) = next_kw_idx {
-        (&remaining_s[..idx].trim(), &remaining_s[idx..])
+        (remaining_s[..idx].trim(), &remaining_s[idx..])
     } else {
         (remaining_s.trim(), "")
     }
@@ -881,7 +876,7 @@ fn parse_tuple_values(
                 current.push(ch);
             }
             ',' if !in_string && depth == 0 => {
-                values.push(parse_single_value(&current.trim(), line_no)?);
+                values.push(parse_single_value(current.trim(), line_no)?);
                 current.clear();
             }
             _ => {
@@ -892,7 +887,7 @@ fn parse_tuple_values(
 
     // Don't forget the last value
     if !current.trim().is_empty() {
-        values.push(parse_single_value(&current.trim(), line_no)?);
+        values.push(parse_single_value(current.trim(), line_no)?);
     }
 
     // Validate count matches schema
@@ -1055,8 +1050,8 @@ fn handle_add_column(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
         let type_str = col_parts[1].trim();
 
         // Check if nullable (ends with ?)
-        let (type_str_clean, nullable) = if type_str.ends_with('?') {
-            (&type_str[..type_str.len() - 1], true)
+        let (type_str_clean, nullable) = if let Some(stripped) = type_str.strip_suffix('?') {
+            (stripped, true)
         } else {
             (type_str, false)
         };

@@ -574,12 +574,10 @@ fn evaluate_operand(
 
     // Check if it's dot notation: name.field
     // But avoid numbers like 1.0
-    if expr.contains('.') && !expr.contains('[') {
-        if expr.parse::<f32>().is_err() {
-            let temp_name = format!("_tmp_{}_{}", base_name, suffix);
-            handle_dot_notation(db, &temp_name, expr, line_no, ctx)?;
-            return Ok(temp_name);
-        }
+    if expr.contains('.') && !expr.contains('[') && expr.parse::<f32>().is_err() {
+        let temp_name = format!("_tmp_{}_{}", base_name, suffix);
+        handle_dot_notation(db, &temp_name, expr, line_no, ctx)?;
+        return Ok(temp_name);
     }
 
     // Check if it's a numeric literal

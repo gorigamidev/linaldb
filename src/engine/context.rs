@@ -126,7 +126,7 @@ impl ExecutionContext {
 
     /// Allocate a temporary vec in the arena
     pub fn alloc_vec<T>(&self, vec: Vec<T>) -> &[T] {
-        self.arena.alloc_slice_fill_iter(vec.into_iter())
+        self.arena.alloc_slice_fill_iter(vec)
     }
 
     /// Track a temporary tensor for cleanup

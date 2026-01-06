@@ -10,6 +10,12 @@ pub struct VectorIndex {
     vectors: Vec<(usize, Tensor)>,
 }
 
+impl Default for VectorIndex {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VectorIndex {
     pub fn new() -> Self {
         Self {

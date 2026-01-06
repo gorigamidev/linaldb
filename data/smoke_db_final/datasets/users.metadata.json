@@ -1,0 +1,78 @@
+{
+  "name": "users",
+  "version": 1,
+  "hash": "users:3",
+  "origin": "Created",
+  "schema_version": 2,
+  "schema_history": [
+    {
+      "version": 2,
+      "schema": {
+        "columns": [
+          {
+            "name": "id",
+            "value_type": "Int",
+            "shape": {
+              "dims": []
+            },
+            "role": "generic",
+            "nullable": false
+          },
+          {
+            "name": "age",
+            "value_type": "Int",
+            "shape": {
+              "dims": []
+            },
+            "role": "generic",
+            "nullable": false
+          },
+          {
+            "name": "score",
+            "value_type": "Float",
+            "shape": {
+              "dims": []
+            },
+            "role": "generic",
+            "nullable": false
+          },
+          {
+            "name": "embedding",
+            "value_type": {
+              "Vector": 3
+            },
+            "shape": {
+              "dims": []
+            },
+            "role": "generic",
+            "nullable": false
+          },
+          {
+            "name": "double_age",
+            "value_type": "Int",
+            "shape": {
+              "dims": []
+            },
+            "role": "generic",
+            "nullable": false
+          },
+          {
+            "name": "triple_age",
+            "value_type": "Int",
+            "shape": {
+              "dims": []
+            },
+            "role": "generic",
+            "nullable": true
+          }
+        ]
+      },
+      "migration": null
+    }
+  ],
+  "created_at": 1767735771,
+  "updated_at": 1767735771,
+  "author": null,
+  "description": null,
+  "tags": []
+}

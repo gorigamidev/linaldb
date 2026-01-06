@@ -419,8 +419,8 @@ impl Dataset {
     }
 
     /// Get index for a column
-    pub fn get_index(&self, column_name: &str) -> Option<&Box<dyn Index>> {
-        self.indices.get(column_name)
+    pub fn get_index(&self, column_name: &str) -> Option<&dyn Index> {
+        self.indices.get(column_name).map(|b| b.as_ref())
     }
 
     fn schema_has_field(&self, name: &str) -> bool {

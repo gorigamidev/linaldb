@@ -1,3 +1,4 @@
+#[allow(clippy::module_inception)]
 pub mod dataset;
 pub mod graph;
 pub mod metadata;

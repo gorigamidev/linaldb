@@ -604,7 +604,7 @@ pub fn matmul_with_timestamp(
             .enumerate()
             .for_each(|(i, row_slice)| {
                 let a_row_base = a_offset + i * a_strides[0];
-                for j in 0..p {
+                for (j, row_val) in row_slice.iter_mut().enumerate().take(p) {
                     let mut sum = 0.0;
                     let b_col_base = b_offset + j * b_strides[1];
                     for k in 0..n {
@@ -619,7 +619,7 @@ pub fn matmul_with_timestamp(
                             sum += a_data[a_idx] * b_data[b_idx];
                         }
                     }
-                    row_slice[j] = sum;
+                    *row_val = sum;
                 }
             });
     } else {

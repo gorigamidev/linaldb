@@ -1,9 +1,6 @@
 // tests/dsl_scenarios.rs
 
-use linal::{
-    TensorDb,
-    execute_script,
-};
+use linal::{execute_script, TensorDb};
 
 #[test]
 fn dsl_basic_math_and_similarity() {
@@ -45,16 +42,15 @@ LET a_norm   = NORMALIZE a
     assert_eq!(sim.shape.rank(), 0);
     let expected_sim = {
         let dot = 32.0;
-        let norm_a = (1.0f32 + 4.0 + 9.0).sqrt();      // sqrt(14)
-        let norm_b = (16.0f32 + 25.0 + 36.0).sqrt();   // sqrt(77)
+        let norm_a = (1.0f32 + 4.0 + 9.0).sqrt(); // sqrt(14)
+        let norm_b = (16.0f32 + 25.0 + 36.0).sqrt(); // sqrt(77)
         dot / (norm_a * norm_b)
     };
     assert!((sim.data[0] - expected_sim).abs() < 1e-6);
 
     let dist = db.get("dist").unwrap();
-    let expected_dist = ((1.0f32 - 4.0f32).powi(2)
-        + (2.0f32 - 5.0f32).powi(2)
-        + (3.0f32 - 6.0f32).powi(2)).sqrt(); // sqrt(27)
+    let expected_dist =
+        ((1.0f32 - 4.0f32).powi(2) + (2.0f32 - 5.0f32).powi(2) + (3.0f32 - 6.0f32).powi(2)).sqrt(); // sqrt(27)
     assert!((dist.data[0] - expected_dist).abs() < 1e-6);
 
     let a_norm = db.get("a_norm").unwrap();
