@@ -114,7 +114,7 @@ Commit message format:
 
 Example:
 
-```
+```text
 Add vector similarity search optimization
 
 - Implement approximate nearest neighbor search
@@ -173,7 +173,7 @@ Then create a Pull Request on GitHub.
 - Use `thiserror` for error types
 - Propagate errors with `?` operator
 
-### Documentation
+### API Documentation
 
 - Document public APIs with `///` comments
 - Include examples in doc comments
@@ -290,29 +290,29 @@ cargo test --test '*'
 
 ### Pull Request Process
 
-1. **Create a Pull Request** on GitHub
-2. **Fill out the PR template**:
+1. **Create a Pull Request** on GitHub.
+2. **Automated CI**: GitHub Actions will automatically run `cargo test`, `fmt`, and `clippy`. Your PR **must pass** these checks to be eligible for merging.
+3. **Fill out the PR template**:
    - Description of changes
    - Related issues (if any)
    - Testing performed
    - Breaking changes (if any)
 
-3. **Ensure CI passes**:
+4. **Ensure CI passes**:
    - All tests pass
    - Code is formatted (`cargo fmt`)
    - No clippy warnings (`cargo clippy`)
 
-4. **Respond to feedback**:
+5. **Respond to feedback**:
    - Address review comments
    - Make requested changes
    - Keep discussion constructive
 
-### PR Checklist
-
 - [ ] Code follows style guidelines
 - [ ] Tests added/updated
 - [ ] Documentation updated
-- [ ] All tests pass
+- [ ] CI Status Checks passing (Automated)
+- [ ] At least 1 Approval from maintainers
 - [ ] No clippy warnings
 - [ ] Code is formatted
 - [ ] Commit messages are clear
@@ -321,7 +321,7 @@ cargo test --test '*'
 
 ## Project Structure
 
-```
+```text
 linal/
 ├── src/
 │   ├── core/          # Core data structures
