@@ -85,10 +85,10 @@ curl -X POST "http://localhost:8080/jobs" -d "SHOW ALL"
 LINALDB is extensively documented to help you scale from local experiments to production services.
 
 - **[Architecture](docs/ARCHITECTURE.md)**: Deep dive into the internal engine design.
-- [x] **[DSL Reference](docs/DSL_REFERENCE.md)**: Complete guide to keywords, operators, and syntax.
-- [x] **[Performance & Benchmarks](docs/BENCHMARKS.md)**: How we achieve 2.5x speedups via SIMD and Rayon.
-- [x] **[Example Gallery](docs/EXAMPLES.md)**: Curated snippets for common ML and analytical workflows.
-- [x] **[Error Reference](docs/ERROR_REFERENCE.md)**: Troubleshooting guide for engine and DSL errors.
+- **[DSL Reference](docs/DSL_REFERENCE.md)**: Complete guide to keywords, operators, and syntax.
+- **[Performance & Benchmarks](docs/BENCHMARKS.md)**: How we achieve 2.5x speedups via SIMD and Rayon.
+- **[Example Gallery](docs/EXAMPLES.md)**: Curated snippets for common ML and analytical workflows.
+- **[Error Reference](docs/ERROR_REFERENCE.md)**: Troubleshooting guide for engine and DSL errors.
 
 ---
 
