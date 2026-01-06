@@ -1,0 +1,5 @@
+id,name,value,active,score
+1,TensorFlow,0.95,true,95.0
+2,PyTorch,0.88,true,88.0
+3,LINAL,1.0,true,100.0
+4,Legacy,0.45,false,45.0

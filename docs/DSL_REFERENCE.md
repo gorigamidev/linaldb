@@ -39,6 +39,14 @@ Create a new tensor from an expression while preserving full provenance.
 DERIVE normalized_v FROM v / 10.0
 ```
 
+### RESET
+
+Clear the current session (all in-memory tensors and datasets).
+
+```sql
+RESET SESSION
+```
+
 ---
 
 ## 3. Tensor & Matrix Operations
@@ -161,6 +169,8 @@ EXPLAIN SELECT * FROM users WHERE id > 10
 - `SAVE TENSOR <name>`: Persist tensor data to JSON.
 - `LOAD DATASET <name>`: Recover dataset from disk.
 - `LIST DATASETS`: Show all persisted datasets.
+- `IMPORT CSV FROM "path"`: Import CSV with schema inference.
+- `EXPORT CSV <name> TO "path"`: Export dataset to CSV.
 
 ---
 

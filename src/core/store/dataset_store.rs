@@ -152,6 +152,13 @@ impl DatasetStore {
     pub fn is_empty(&self) -> bool {
         self.datasets.is_empty()
     }
+
+    /// Clears the store
+    pub fn clear(&mut self) {
+        self.next_id = 0;
+        self.datasets.clear();
+        self.names.clear();
+    }
 }
 
 impl Default for DatasetStore {

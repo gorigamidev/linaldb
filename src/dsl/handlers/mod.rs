@@ -9,6 +9,7 @@ pub mod operations;
 pub mod persistence;
 pub mod search;
 pub mod semantics;
+pub mod session;
 pub mod tensor;
 
 pub use audit::handle_audit;
@@ -17,4 +18,5 @@ pub use instance::{handle_create_database, handle_drop_database, handle_use_data
 pub use introspection::handle_show;
 pub use operations::handle_let;
 pub use semantics::{handle_attach, handle_bind, handle_derive};
+pub use session::handle_session;
 pub use tensor::handle_define;

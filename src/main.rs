@@ -11,7 +11,7 @@ use toon_format::encode_default;
 
 #[derive(Parser)]
 #[command(name = "LINAL")]
-#[command(version = "0.1")]
+#[command(version = "0.1.9")]
 #[command(about = "LINAL: Linear Algebra Analytical Engine", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -68,6 +68,14 @@ enum Commands {
         /// Database name to use
         #[arg(long, short)]
         db: Option<String>,
+        /// Output format (display or toon)
+        #[arg(long, default_value = "display")]
+        format: String,
+    },
+    /// Execute a DSL command directly (embedded mode)
+    Exec {
+        /// The DSL command string
+        command: String,
         /// Output format (display or toon)
         #[arg(long, default_value = "display")]
         format: String,
@@ -173,6 +181,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             format,
         }) => {
             handle_query(&mut db, dsl, url, target_db, format == "toon").await?;
+        }
+        Some(Commands::Exec { command, format }) => {
+            handle_exec(&mut db, command, format == "toon")?;
         }
         Some(Commands::Repl { format }) => {
             run_repl(db, format == "toon")?;
@@ -408,4 +419,31 @@ async fn handle_query(
         }
     }
     Ok(())
+}
+
+fn handle_exec(
+    db: &mut TensorDb,
+    command: String,
+    use_toon: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match execute_line(db, &command, 1) {
+        Ok(output) => {
+            if !matches!(output, DslOutput::None) {
+                if use_toon {
+                    println!(
+                        "{}",
+                        encode_default(&output)
+                            .unwrap_or_else(|e| format!("Error encoding TOON: {}", e))
+                    );
+                } else {
+                    println!("{}", output);
+                }
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("{}: {}", "Error".red(), e);
+            Err(e.into())
+        }
+    }
 }

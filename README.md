@@ -1,4 +1,4 @@
-# ⚡ LINAL
+# ⚡ LINAL (v0.1.9)
 
 **LINAL** is an experimental, in-memory analytical engine built for scientific computing, machine learning, and structured data analysis. It bridges the gap between Relational Databases and Tensor Computation, providing a SQL-like DSL that treats Vectors and Matrices as first-class citizens.
 
@@ -109,7 +109,26 @@ WHERE embedding ~= [0.1, 0.2, ... 128 values ...]
 LIMIT 5
 ```
 
-### 5. Multi-Database Engine
+### 5. Local First & Embedded Mode
+
+LINAL (v0.1.9) is now optimized for local development and embedded analytical workflows.
+
+- **CSV I/O**: High-performance CSV import/export with automatic schema inference.
+- **Session Management**: Isolated execution contexts with explicit `RESET SESSION` support.
+- **Inline Execution**: Execute single commands directly via `linal exec "..."`.
+
+```sql
+-- Fast local data ingestion
+IMPORT CSV FROM "./data/raw_data.csv" AS my_dataset
+
+-- Clean session without restart
+RESET SESSION
+
+-- Direct CLI execution
+-- linal exec "SELECT * FROM my_dataset"
+```
+
+### 6. Multi-Database Engine
 
 Manage multiple isolated database instances within a single cluster.
 
@@ -143,19 +162,19 @@ SET DATASET users METADATA tags = "scientific,test"
 
 LINAL now supports declarative resource management and built-in execution lineage.
 
-* **BIND**: Create zero-copy aliases for tensors or datasets.
+- **BIND**: Create zero-copy aliases for tensors or datasets.
 
     ```sql
     BIND scores_alias TO original_scores
     ```
 
-* **ATTACH**: Declaratively link independent tensors into dataset columns.
+- **ATTACH**: Declaratively link independent tensors into dataset columns.
 
     ```sql
     ATTACH vector_weights TO neural_ds.weights
     ```
 
-* **DERIVE**: Explicitly compute new tensors while preserving full provenance (Lineage).
+- **DERIVE**: Explicitly compute new tensors while preserving full provenance (Lineage).
 
     ```sql
     DERIVE normalized_v FROM v / 10.0
@@ -169,9 +188,9 @@ Every tensor created via `DERIVE` or `LET` automatically tracks its origin, oper
 
 LINAL provides advanced tools to audit your analytical pipelines and trace data provenance.
 
-* **SHOW LINEAGE**: Visualize the full recursive "ancestry" of any tensor.
-* **AUDIT DATASET**: Deep validation of zero-copy Reference Graphs to ensure all data dependencies are healthy.
-* **Engine Warnings**: Automatic detection of dangling references in datasets.
+- **SHOW LINEAGE**: Visualize the full recursive "ancestry" of any tensor.
+- **AUDIT DATASET**: Deep validation of zero-copy Reference Graphs to ensure all data dependencies are healthy.
+- **Engine Warnings**: Automatic detection of dangling references in datasets.
 
 ```sql
 -- Trace where 'result' came from
@@ -185,10 +204,10 @@ AUDIT DATASET diagnostics
 
 LINAL has evolved from a local-only tool into a **Managed Analytical Service**.
 
-* **Managed Instances**: Create, list, and drop isolated database instances via CLI or REST.
-* **Multitenancy**: Shared infrastructure with per-request database context isolation via `X-Linal-Database` header.
-* **Background Scheduler**: Automate your analytical pipelines with periodic execution of DSL commands.
-* **Remote CLI Mode**: Connect to remote LINAL servers directly from the command line.
+- **Managed Instances**: Create, list, and drop isolated database instances via CLI or REST.
+- **Multitenancy**: Shared infrastructure with per-request database context isolation via `X-Linal-Database` header.
+- **Background Scheduler**: Automate your analytical pipelines with periodic execution of DSL commands.
+- **Remote CLI Mode**: Connect to remote LINAL servers directly from the command line.
 
 ---
 
@@ -258,8 +277,8 @@ curl -X POST "http://localhost:8080/schedule" \
 
 *Response Formats:*
 
-* **TOON** (default): Token-Oriented Object Notation - human and machine readable
-* **JSON** (opt-in): Standard JSON format via `?format=json` query parameter
+- **TOON** (default): Token-Oriented Object Notation - human and machine readable
+- **JSON** (opt-in): Standard JSON format via `?format=json` query parameter
 
 ---
 
@@ -269,20 +288,20 @@ curl -X POST "http://localhost:8080/schedule" \
 
 Phase 6 turned LINAL into a professional-grade analytical service:
 
-* **`linal db <cmd>`**: New CLI subcommands for instance lifecycle management.
-* **`linal query --url`**: Remote execution mode for connecting to central servers.
-* **Multitenant Server**: Database isolation via HTTP headers.
-* **Background Scheduler**: Periodic task execution within the server.
-* **Context-Aware Shell**: REPL prompt now shows active database name and supports `.use <db>`.
+- **`linal db <cmd>`**: New CLI subcommands for instance lifecycle management.
+- **`linal query --url`**: Remote execution mode for connecting to central servers.
+- **Multitenant Server**: Database isolation via HTTP headers.
+- **Background Scheduler**: Periodic task execution within the server.
+- **Context-Aware Shell**: REPL prompt now shows active database name and supports `.use <db>`.
 
 ### Introspection & Consistency (v0.1.8)
 
 LINAL is now a fully introspectable engine with formal diagnostic tools:
 
-* **`SHOW LINEAGE`**: Recursive ancestry reporting for derived tensors.
-* **`AUDIT DATASET`**: Formal integrity verification for Reference Graphs.
-* **Improved Diagnostics**: Enhanced `SHOW` output for tensors, including creation timestamps and source operations.
-* **Reference Persistence**: Full serialization of execution provenance (Phase 5 of formalization roadmap).
+- **`SHOW LINEAGE`**: Recursive ancestry reporting for derived tensors.
+- **`AUDIT DATASET`**: Formal integrity verification for Reference Graphs.
+- **Improved Diagnostics**: Enhanced `SHOW` output for tensors, including creation timestamps and source operations.
+- **Reference Persistence**: Full serialization of execution provenance (Phase 5 of formalization roadmap).
 
 ### CLI & Server Hardening (v0.1.4 - LINAL)
 
@@ -290,21 +309,21 @@ Significant improvements to the user experience and engine robustness:
 
 **Professional REPL (LINAL Shell):**
 
-* Integrated `rustyline` for persistent command history and multi-line support.
-* Balanced parentheses logic for entering complex datasets directly in the REPL.
-* `colored` output for improved readability and error reporting.
+- Integrated `rustyline` for persistent command history and multi-line support.
+- Balanced parentheses logic for entering complex datasets directly in the REPL.
+- `colored` output for improved readability and error reporting.
 
 **Administrative CLI Commands:**
 
-* `linal init`: Automated setup for `./data` and `linal.toml`.
-* `linal load <file> <dataset>`: Direct Parquet ingestion via CLI.
-* `linal serve`: Shorthand for starting the HTTP server.
+- `linal init`: Automated setup for `./data` and `linal.toml`.
+- `linal load <file> <dataset>`: Direct Parquet ingestion via CLI.
+- `linal serve`: Shorthand for starting the HTTP server.
 
 **Server Robustness & API Docs:**
 
-* **Query Timeouts**: Long-running queries automatically cancel after 30s.
-* **Request Validation**: Size limits and non-empty checks for all incoming commands.
-* **OpenAPI / Swagger UI**: Built-in interactive documentation available at `/swagger-ui`.
+- **Query Timeouts**: Long-running queries automatically cancel after 30s.
+- **Request Validation**: Size limits and non-empty checks for all incoming commands.
+- **OpenAPI / Swagger UI**: Built-in interactive documentation available at `/swagger-ui`.
 
 ---
 
@@ -314,16 +333,16 @@ Unified interface across all access methods with flexible output formats:
 
 **Server API Improvements:**
 
-* Raw DSL commands as input (no JSON wrapper needed)
-* TOON format as default output
-* JSON format available via `?format=json` query parameter
-* Backward compatible with legacy JSON request format
+- Raw DSL commands as input (no JSON wrapper needed)
+- TOON format as default output
+- JSON format available via `?format=json` query parameter
+- Backward compatible with legacy JSON request format
 
 **CLI Enhancements:**
 
-* `--format` flag for REPL and script execution
-* Choose between `display` (human-readable) or `toon` (machine-readable) output
-* Perfect for automation and scripting workflows
+- `--format` flag for REPL and script execution
+- Choose between `display` (human-readable) or `toon` (machine-readable) output
+- Perfect for automation and scripting workflows
 
 **Example:**
 
@@ -341,9 +360,9 @@ curl -X POST "http://localhost:8080/execute?format=json" \
 
 Full implementation of AVG aggregation with proper sum/count tracking:
 
-* Supports Int, Float, Vector, and Matrix types
-* Automatic type conversion (Int → Float for precision)
-* Works with GROUP BY and computed expressions
+- Supports Int, Float, Vector, and Matrix types
+- Automatic type conversion (Int → Float for precision)
+- Works with GROUP BY and computed expressions
 
 ### Computed Columns (v0.1.2)
 
@@ -375,10 +394,10 @@ MATERIALIZE analytics
 
 Lazy columns provide on-demand computation, storing expressions instead of pre-computed values:
 
-* **Storage Efficiency**: Only store expressions, not computed values
-* **On-Demand Evaluation**: Values computed when accessed in queries
-* **Materialization**: Convert lazy columns to materialized with `MATERIALIZE` command
-* **Automatic Evaluation**: Query execution automatically evaluates lazy columns
+- **Storage Efficiency**: Only store expressions, not computed values
+- **On-Demand Evaluation**: Values computed when accessed in queries
+- **Materialization**: Convert lazy columns to materialized with `MATERIALIZE` command
+- **Automatic Evaluation**: Query execution automatically evaluates lazy columns
 
 ### Schema Introspection
 
@@ -433,10 +452,10 @@ default_db = "default"
 
 **Key Features:**
 
-* **Auto-Discovery**: Engine automatically discovers and recovers databases from `data_dir` on startup.
-* **Database Isolation**: Persistence is siloed per database (e.g., `./data/analytics/` vs `./data/default/`).
-* **Standard Formats**: Datasets use **Apache Parquet** for efficiency; Tensors use JSON for weights and metadata.
-* **Seamless Recovery**: Databases created in one session are immediately available in the next.
+- **Auto-Discovery**: Engine automatically discovers and recovers databases from `data_dir` on startup.
+- **Database Isolation**: Persistence is siloed per database (e.g., `./data/analytics/` vs `./data/default/`).
+- **Standard Formats**: Datasets use **Apache Parquet** for efficiency; Tensors use JSON for weights and metadata.
+- **Seamless Recovery**: Databases created in one session are immediately available in the next.
 
 ---
 
@@ -481,11 +500,11 @@ $ cargo run
 
 ## Architecture
 
-* **Storage Engine**: In-memory columnar/row hybrid store with specialized indices (HashIndex, VectorIndex).
-* **Query Engine**: Logical -> Physical plan optimization with predicate pushdown and index-aware execution.
-* **Type System**: Strong typing with inference for arithmetic expressions (`Matrix + Float = Matrix`).
-* **Aggregation Engine**: Full SQL aggregation support (SUM, AVG, COUNT, MIN, MAX) with element-wise operations on vectors and matrices.
-* **Schema Evolution**: Dynamic column addition with computed columns support (`ADD COLUMN x = expression`).
+- **Storage Engine**: In-memory columnar/row hybrid store with specialized indices (HashIndex, VectorIndex).
+- **Query Engine**: Logical -> Physical plan optimization with predicate pushdown and index-aware execution.
+- **Type System**: Strong typing with inference for arithmetic expressions (`Matrix + Float = Matrix`).
+- **Aggregation Engine**: Full SQL aggregation support (SUM, AVG, COUNT, MIN, MAX) with element-wise operations on vectors and matrices.
+- **Schema Evolution**: Dynamic column addition with computed columns support (`ADD COLUMN x = expression`).
 
 ## Performance
 
@@ -493,15 +512,15 @@ LINAL has undergone comprehensive performance optimization (Phases 7-11):
 
 ### Key Optimizations
 
-* **Zero-Copy Views**: Reshape, transpose, and slice operations are O(1) metadata-only transformations
-* **SIMD Acceleration**: Platform-specific SIMD kernels (NEON, SSE/AVX) for vector operations
-* **Parallel Execution**: Rayon-based parallelization for large tensors (≥50k elements) - **2.5x speedup**
-* **Smart Allocation**: Three-tier strategy (stack/direct/pool) based on tensor size
-* **Memory Management**: Arena allocation with configurable limits (default 100MB per context)
+- **Zero-Copy Views**: Reshape, transpose, and slice operations are O(1) metadata-only transformations
+- **SIMD Acceleration**: Platform-specific SIMD kernels (NEON, SSE/AVX) for vector operations
+- **Parallel Execution**: Rayon-based parallelization for large tensors (≥50k elements) - **2.5x speedup**
+- **Smart Allocation**: Three-tier strategy (stack/direct/pool) based on tensor size
+- **Memory Management**: Arena allocation with configurable limits (default 100MB per context)
 
 ### Allocation Strategy
 
-```
+```text
 ≤16 elements    → Stack allocation (SmallVec) - zero heap allocation
 17-255 elements → Direct heap allocation - minimal overhead
 ≥256 elements   → Tensor pooling - reuse allocations
@@ -521,13 +540,13 @@ LINAL has undergone comprehensive performance optimization (Phases 7-11):
 
 ## Documentation
 
-* [Architecture](docs/ARCHITECTURE.md) - System architecture and design
-* [Performance Benchmarks](docs/BENCHMARKS.md) - Performance results and optimization details
-* [DSL Reference](docs/DSL_REFERENCE.md) - Complete DSL command reference
-* [Roadmap & Status](docs/Tasks_implementations.md) - Development roadmap
-* [Changelog](CHANGELOG.md) - Version history
-* [Contributing](CONTRIBUTING.md) - How to contribute
-* [Security](SECURITY.md) - Security policy and considerations
+- [Architecture](docs/ARCHITECTURE.md) - System architecture and design
+- [Performance Benchmarks](docs/BENCHMARKS.md) - Performance results and optimization details
+- [DSL Reference](docs/DSL_REFERENCE.md) - Complete DSL command reference
+- [Roadmap & Status](docs/Tasks_implementations.md) - Development roadmap
+- [Changelog](CHANGELOG.md) - Version history
+- [Contributing](CONTRIBUTING.md) - How to contribute
+- [Security](SECURITY.md) - Security policy and considerations
 
 ## License
 

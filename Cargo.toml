@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 arrow = "53.3.0"
+arrow-csv = "53.3.0"
 axum = "0.7.9"
 clap = { version = "4.5.53", features = ["derive"] }
 parquet = { version = "53.3.0", features = ["arrow"] }

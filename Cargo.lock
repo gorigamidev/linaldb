@@ -1839,6 +1839,7 @@ name = "linal"
 version = "0.1.9"
 dependencies = [
  "arrow",
+ "arrow-csv",
  "axum",
  "bumpalo",
  "chrono",

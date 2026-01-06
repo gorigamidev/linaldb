@@ -76,4 +76,9 @@ impl InMemoryTensorStore {
         self.tensors.retain(|t| t.id != id);
         self.tensors.len() < len_before
     }
+
+    /// Clears the store
+    pub fn clear(&mut self) {
+        self.tensors.clear();
+    }
 }

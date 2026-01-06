@@ -44,4 +44,8 @@ impl DatasetRegistry {
     pub fn datasets(&self) -> &HashMap<String, Dataset> {
         &self.datasets
     }
+
+    pub fn clear(&mut self) {
+        self.datasets.clear();
+    }
 }

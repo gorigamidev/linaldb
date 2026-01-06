@@ -91,6 +91,10 @@ The engine is built in Rust with a modular architecture that separates concerns 
         │  │   Parquet    │  │     JSON     │ │
         │  │  (Datasets)  │  │   (Tensors)  │ │
         │  └──────────────┘  └──────────────┘ │
+        │  ┌──────────────┐                   │
+        │  │     CSV      │                   │
+        │  │  (I/O Opts)  │                   │
+        │  └──────────────┘                   │
         └─────────────────────────────────────┘
 ```
 
@@ -153,6 +157,7 @@ The core module contains fundamental data structures and abstractions:
 - **StorageEngine**: Trait for persistence abstraction
 - **ParquetStorage**: Parquet-based dataset persistence
 - **JsonStorage**: JSON-based tensor persistence
+- **CsvStorage**: CSV-based import/export with schema inference
 
 ### 2. Engine Module (`src/engine/`)
 
@@ -166,6 +171,7 @@ The engine module orchestrates execution:
   - Multi-database support with context switching
   - Automatic recovery from disk on startup
   - Configuration via `linal.toml`
+  - **Session Management**: Explicit `RESET SESSION` capability to clear in-memory state
 
 #### `operations.rs`
 
@@ -204,7 +210,7 @@ Command-specific handlers:
 - **operations.rs**: LET, binary/unary operations
 - **index.rs**: CREATE INDEX, CREATE VECTOR INDEX
 - **search.rs**: SEARCH (vector similarity)
-- **persistence.rs**: SAVE, LOAD, LIST commands
+- **persistence.rs**: SAVE, LOAD, LIST, IMPORT, EXPORT commands
 - **instance.rs**: CREATE DATABASE, USE, DROP DATABASE
 - **metadata.rs**: SET DATASET METADATA
 - **explain.rs**: EXPLAIN, EXPLAIN PLAN

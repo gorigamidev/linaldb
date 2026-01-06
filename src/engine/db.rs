@@ -303,6 +303,15 @@ impl DatabaseInstance {
         )
         .map_err(|e| EngineError::InvalidOp(e))?)
     }
+
+    /// Resets the database biological state (clear all tensors and datasets)
+    pub fn reset(&mut self) {
+        self.store.clear();
+        self.names.clear();
+        self.dataset_store.clear();
+        self.tensor_datasets.clear();
+        self.dataset_vars.clear();
+    }
 }
 
 /// High-level engine that manages multiple DatabaseInstances
@@ -754,6 +763,11 @@ impl TensorDb {
         // For now, just clear the tracked resources
         // In Phase 2, we'll implement proper removal when stores support it
         ctx.clear_tracked();
+    }
+
+    /// Resets the active session (clear all data in the active database)
+    pub fn reset_session(&mut self) {
+        self.active_instance_mut().reset();
     }
 }
 

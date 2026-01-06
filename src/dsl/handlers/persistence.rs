@@ -1,4 +1,4 @@
-use crate::core::storage::{ParquetStorage, StorageEngine};
+use crate::core::storage::{CsvStorage, ParquetStorage, StorageEngine};
 use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
 use std::fs;
@@ -369,4 +369,118 @@ fn handle_list_tensors_impl(
     };
 
     Ok(DslOutput::Message(message))
+}
+
+/// Handle IMPORT CSV command
+/// Syntax: IMPORT CSV FROM "path" [AS dataset_name]
+pub fn handle_import(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    let rest = line.strip_prefix("IMPORT ").unwrap().trim();
+
+    if !rest.starts_with("CSV ") {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected 'CSV' after 'IMPORT'".to_string(),
+        });
+    }
+
+    let rest = rest.strip_prefix("CSV ").unwrap().trim();
+
+    // Parse: FROM "path" [AS dataset_name]
+    let (path, dataset_name_override) = if rest.starts_with("FROM ") {
+        let rest = rest.strip_prefix("FROM ").unwrap().trim();
+        if let Some(as_idx) = rest.find(" AS ") {
+            let path = rest[..as_idx].trim().trim_matches('"');
+            let name = rest[as_idx + 4..].trim();
+            (path, Some(name))
+        } else {
+            (rest.trim_matches('"'), None)
+        }
+    } else {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected 'FROM \"path\"' in IMPORT CSV command".to_string(),
+        });
+    };
+
+    let resolved_path = resolve_persistence_path(db, path);
+    let csv_storage = CsvStorage::new(&resolved_path);
+
+    let dataset = csv_storage
+        .import_dataset(&resolved_path)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Failed to import CSV: {}", e),
+        })?;
+
+    let final_name =
+        dataset_name_override.unwrap_or(dataset.metadata.name.as_deref().unwrap_or("imported_csv"));
+
+    // Register dataset in DB
+    let schema = dataset.schema.clone();
+    db.create_dataset(final_name.to_string(), schema)
+        .map_err(|e| DslError::Engine {
+            line: line_no,
+            source: e,
+        })?;
+
+    let row_count = dataset.len();
+    for row in dataset.rows {
+        db.insert_row(final_name, row)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
+    }
+
+    Ok(DslOutput::Message(format!(
+        "Imported {} rows from '{}' into dataset '{}'",
+        row_count, path, final_name
+    )))
+}
+
+/// Handle EXPORT CSV command
+/// Syntax: EXPORT CSV dataset_name TO "path"
+pub fn handle_export(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    let rest = line.strip_prefix("EXPORT ").unwrap().trim();
+
+    if !rest.starts_with("CSV ") {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected 'CSV' after 'EXPORT'".to_string(),
+        });
+    }
+
+    let rest = rest.strip_prefix("CSV ").unwrap().trim();
+
+    // Parse: dataset_name TO "path"
+    let (dataset_name, path) = if let Some(idx) = rest.find(" TO ") {
+        let name = rest[..idx].trim();
+        let path = rest[idx + 4..].trim().trim_matches('"');
+        (name, path)
+    } else {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected 'TO \"path\"' in EXPORT CSV command".to_string(),
+        });
+    };
+
+    let dataset = db.get_dataset(dataset_name).map_err(|e| DslError::Engine {
+        line: line_no,
+        source: e,
+    })?;
+
+    let resolved_path = resolve_persistence_path(db, path);
+    let csv_storage = CsvStorage::new(&resolved_path);
+
+    csv_storage
+        .export_dataset(dataset, &resolved_path)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Failed to export CSV: {}", e),
+        })?;
+
+    Ok(DslOutput::Message(format!(
+        "Exported dataset '{}' to '{}'",
+        dataset_name, path
+    )))
 }

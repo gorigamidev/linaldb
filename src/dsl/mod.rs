@@ -232,6 +232,12 @@ pub fn execute_line_with_context(
         handlers::persistence::handle_load(db, line, line_no)
     } else if line.starts_with("LIST DATASETS") || line.starts_with("LIST TENSORS") {
         handlers::persistence::handle_list_datasets(db, line, line_no)
+    } else if line.starts_with("IMPORT ") {
+        handlers::persistence::handle_import(db, line, line_no)
+    } else if line.starts_with("EXPORT ") {
+        handlers::persistence::handle_export(db, line, line_no)
+    } else if line.starts_with("RESET ") {
+        handlers::session::handle_session(db, line, line_no)
     } else {
         // Comment or empty? handled in script, but for single line exec check too
         if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
