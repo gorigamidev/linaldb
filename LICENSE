@@ -1,4 +1,4 @@
-# LinalDB Community License v1.0
+LinalDB Community License v1.0
 
 Copyright (c) 2025 gorigami
 https://gorigami.xyz
@@ -7,7 +7,7 @@ This software was created in December 2025.
 
 ---
 
-## 1. Grant of Rights
+1. Grant of Rights
 
 Subject to the terms and limitations of this license, permission is hereby
 granted, free of charge, to any person obtaining a copy of this software and
@@ -24,7 +24,7 @@ Permitted uses include, but are not limited to:
 
 ---
 
-## 2. Limitations
+2. Limitations
 
 The Software may NOT be used for Commercial Purposes without an explicit
 Commercial License granted by the Licensor.
@@ -41,7 +41,7 @@ redistribution or external offering, is permitted.
 
 ---
 
-## 3. Commercial License
+3. Commercial License
 
 Any use of the Software for Commercial Purposes requires a separate
 Commercial License.
@@ -51,14 +51,14 @@ develop@gorigami.xyz
 
 ---
 
-## 4. Contributions
+4. Contributions
 
 Unless otherwise explicitly stated, any contribution intentionally submitted
 to the project shall be licensed under the terms of this license.
 
 ---
 
-## 5. No Change of License (At This Time)
+5. No Change of License (At This Time)
 
 This license does not currently include an automatic change or conversion to
 another license. The Licensor reserves the right to modify licensing terms
@@ -66,7 +66,7 @@ for future versions of the Software.
 
 ---
 
-## 6. Disclaimer of Warranty
+6. Disclaimer of Warranty
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
