@@ -14,6 +14,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] Python/WASM integration
 - [ ] Native ML operators (KNN, clustering, PCA)
 
+## [0.1.11] - 2026-01-05
+
+### Added - Phase 3: Server Concurrency & Async Jobs
+
+- **High-Concurrency Analytical Reads**
+  - Refactored global state from `Mutex` to `RwLock` for parallel execution.
+  - Implemented `execute_line_shared` for safe concurrent analytical query dispatch.
+  - Optimized resource locking to allow multiple readers without blocking write-intensive operations.
+- **Asynchronous Job System**
+  - Integrated `JobManager` for background execution of long-running DSL commands.
+  - New REST API endpoints: `POST /jobs`, `GET /jobs`, `GET /jobs/:id`, `GET /jobs/:id/result`.
+  - Support for job cancellation via `DELETE /jobs/:id`.
+- **Operational Polish**
+  - Implemented multi-platform Graceful Shutdown (SIGINT/SIGTERM handling) for the Axum server.
+  - Enhanced CLI with server management subcommands: `linal server status`.
+
+### Changed
+
+- Updated all integration tests to support the new `RwLock`-based architecture.
+- Improved server responsiveness during heavy analytical workloads.
+
 ## [0.1.10] - 2026-01-02
 
 ### Performance Improvements - Phases 7-11
@@ -455,8 +476,9 @@ LINAL is positioned as:
 
 ---
 
-[Unreleased]: https://github.com/gorigami/linal/compare/v0.1.9...HEAD
-[0.1.9]: https://github.com/gorigami/linal/compare/v0.1.8...v0.1.9
+[Unreleased]: https://github.com/gorigami/linal/compare/v0.1.11...HEAD
+[0.1.11]: https://github.com/gorigami/linal/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/gorigami/linal/compare/v0.1.9...v0.1.10
 [0.1.8]: https://github.com/gorigami/linal/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/gorigami/linal/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/gorigami/linal/compare/v0.1.5...v0.1.6

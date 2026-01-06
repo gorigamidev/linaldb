@@ -3,11 +3,7 @@ use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
 use crate::query::planner::Planner;
 
-pub fn handle_explain(
-    db: &mut TensorDb,
-    line: &str,
-    line_no: usize,
-) -> Result<DslOutput, DslError> {
+pub fn handle_explain(db: &TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     let rest = line.trim_start_matches("EXPLAIN").trim();
     let query_line = if rest.to_uppercase().starts_with("PLAN ") {
         rest[5..].trim()

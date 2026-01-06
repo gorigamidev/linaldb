@@ -1,14 +1,14 @@
 use axum::http::StatusCode;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tokio::time::sleep;
 use linal::engine::TensorDb;
 use linal::server::start_server;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
+use tokio::time::sleep;
 
 #[tokio::test]
 async fn test_toon_server_output() {
     // 1. Setup DB and start server in background
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8095; // Use valid test port
     let db_clone = db.clone();
 
@@ -55,7 +55,7 @@ async fn test_toon_server_output() {
 #[tokio::test]
 async fn test_toon_dsl_output() {
     // 1. Setup DB and start server
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8096;
     let db_clone = db.clone();
 
@@ -108,7 +108,7 @@ async fn test_toon_dsl_output() {
 #[tokio::test]
 async fn test_json_backward_compatibility() {
     // Test that JSON format still works (with deprecation warning)
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8097;
     let db_clone = db.clone();
 
@@ -141,7 +141,7 @@ async fn test_json_backward_compatibility() {
 #[tokio::test]
 async fn test_json_format_response() {
     // Test JSON format via query parameter
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8098;
     let db_clone = db.clone();
 
@@ -185,7 +185,7 @@ async fn test_json_format_response() {
 #[tokio::test]
 async fn test_toon_format_explicit() {
     // Test explicit TOON format via query parameter
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8099;
     let db_clone = db.clone();
 
@@ -227,7 +227,7 @@ async fn test_toon_format_explicit() {
 #[tokio::test]
 async fn test_invalid_format_defaults_to_toon() {
     // Test that invalid format defaults to TOON
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8100;
     let db_clone = db.clone();
 
@@ -264,7 +264,7 @@ async fn test_invalid_format_defaults_to_toon() {
 }
 #[tokio::test]
 async fn test_server_validation_empty() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8101;
     let db_clone = db.clone();
 
@@ -290,7 +290,7 @@ async fn test_server_validation_empty() {
 
 #[tokio::test]
 async fn test_server_validation_length() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8102;
     let db_clone = db.clone();
 

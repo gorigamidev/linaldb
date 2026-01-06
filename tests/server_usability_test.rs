@@ -1,12 +1,12 @@
 use linal::engine::TensorDb;
 use linal::server::start_server;
 use reqwest::Client;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::time::sleep;
 
-async fn setup_server(port: u16) -> Arc<Mutex<TensorDb>> {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+async fn setup_server(port: u16) -> Arc<RwLock<TensorDb>> {
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let db_clone = db.clone();
     tokio::spawn(async move {
         start_server(db_clone, port).await;

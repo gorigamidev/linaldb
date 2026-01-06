@@ -208,10 +208,10 @@ AUDIT DATASET diagnostics
 
 LINAL has evolved from a local-only tool into a **Managed Analytical Service**.
 
-- **Managed Instances**: Create, list, and drop isolated database instances via CLI or REST.
 - **Multitenancy**: Shared infrastructure with per-request database context isolation via `X-Linal-Database` header.
+- **Asynchronous Jobs**: Submit long-running queries to the background and poll for results via the `/jobs` API.
+- **High-Concurrency**: Optimized `RwLock` architecture allows multiple parallel analytical queries without blocking.
 - **Background Scheduler**: Automate your analytical pipelines with periodic execution of DSL commands.
-- **Remote CLI Mode**: Connect to remote LINAL servers directly from the command line.
 
 ---
 
@@ -288,15 +288,14 @@ curl -X POST "http://localhost:8080/schedule" \
 
 ## Recent Features
 
-### Managed Service & Usability (v0.1.9)
+### High-Concurrency & Asynchronous Jobs (v0.1.9)
 
-Phase 6 turned LINAL into a professional-grade analytical service:
+Phase 3 introduces enterprise-grade execution capabilities:
 
-- **`linal db <cmd>`**: New CLI subcommands for instance lifecycle management.
-- **`linal query --url`**: Remote execution mode for connecting to central servers.
-- **Multitenant Server**: Database isolation via HTTP headers.
-- **Background Scheduler**: Periodic task execution within the server.
-- **Context-Aware Shell**: REPL prompt now shows active database name and supports `.use <db>`.
+- **Parallel Analytical Reads**: Multiple users can now query the same database instance simultaneously using shared `RwLock` access.
+- **Background Job Manager**: Asynchronous execution for heavy workloads. Submit via `POST /jobs` and retrieve results later.
+- **Graceful Shutdown**: Server handles termination signals safely, allowing in-flight requests to complete.
+- **Improved CLI**: `linal server status` and nested server management commands.
 
 ### Introspection & Consistency (v0.1.8)
 

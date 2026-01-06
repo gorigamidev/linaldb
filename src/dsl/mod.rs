@@ -140,9 +140,43 @@ pub fn execute_script(db: &mut TensorDb, script: &str) -> Result<(), DslError> {
     Ok(())
 }
 
-/// Ejecuta una sola línea de DSL
+/// Execute a single DSL line
 pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     execute_line_with_context(db, line, line_no, None)
+}
+
+/// Check if a command is read-only
+pub fn is_read_only(line: &str) -> bool {
+    let line = line.trim();
+    line.starts_with("SHOW ")
+        || line.starts_with("EXPLAIN ")
+        || line.starts_with("AUDIT ")
+        || line.starts_with("LIST ")
+}
+
+/// Execute a single DSL line with an immutable reference to the DB (Shared access)
+pub fn execute_line_shared(
+    db: &TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
+    if line.starts_with("SHOW ") {
+        handle_show(db, line, line_no)
+    } else if line.starts_with("EXPLAIN ") {
+        handlers::explain::handle_explain(db, line, line_no)
+    } else if line.starts_with("AUDIT ") {
+        handlers::audit::handle_audit(db, line, line_no)
+    } else if line.starts_with("LIST ") {
+        handlers::persistence::handle_list_datasets(db, line, line_no)
+    } else {
+        Err(DslError::Parse {
+            line: line_no,
+            msg: format!(
+                "Command is not supported in shared execution mode: {}",
+                line
+            ),
+        })
+    }
 }
 
 /// Execute a single DSL line with an optional execution context

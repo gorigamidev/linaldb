@@ -212,4 +212,35 @@ SHOW DATABASES
 
 ---
 
+## 8. Server & Job Management
+
+LINAL supports asynchronous background execution and high-concurrency server modes.
+
+### Background Jobs
+
+Manage long-running DSL commands as isolated background tasks.
+
+- **Submit**: `POST /jobs` (REST API) executes a DSL command in the background.
+- **Cancel**: `DELETE /jobs/:id` cancels a pending job.
+
+### Server Commands (CLI)
+
+Control the LINAL server instance directly from the command line.
+
+```bash
+# Check if server is running and healthy
+linal server status
+
+# Start server on specific port
+linal server start --port 8080
+```
+
+### High-Concurrency Features
+
+- **Parallel Reads**: Analytical commands (`SHOW`, `SELECT`, `EXPLAIN`, `AUDIT`) run in parallel using shared locks.
+- **Thread Safety**: State-modifying operations automatically acquire exclusive write locks to ensure consistency.
+- **Graceful Shutdown**: The server safely finishes active requests before exiting on SIGINT/SIGTERM.
+
+---
+
 **LINAL**: *Where SQL meets Linear Algebra.*

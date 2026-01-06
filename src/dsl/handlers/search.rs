@@ -80,7 +80,7 @@ pub fn handle_search(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
 }
 
 pub fn build_search_query_plan(
-    db: &mut TensorDb,
+    db: &TensorDb,
     line: &str,
     line_no: usize,
 ) -> Result<(Option<String>, LogicalPlan), DslError> {

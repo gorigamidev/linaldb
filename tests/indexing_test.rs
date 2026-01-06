@@ -1,12 +1,12 @@
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tokio::time::sleep;
 use linal::engine::TensorDb;
 use linal::server::start_server;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
+use tokio::time::sleep;
 
 #[tokio::test]
 async fn test_matrix_indexing() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8098;
     let db_clone = db.clone();
 
@@ -61,7 +61,7 @@ async fn test_matrix_indexing() {
 
 #[tokio::test]
 async fn test_vector_indexing() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8099;
     let db_clone = db.clone();
 
@@ -119,7 +119,7 @@ async fn test_vector_indexing() {
 
 #[tokio::test]
 async fn test_indexing_out_of_bounds() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8100;
     let db_clone = db.clone();
 
@@ -160,7 +160,7 @@ async fn test_indexing_out_of_bounds() {
 
 #[tokio::test]
 async fn test_indexing_wrong_dimensions() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8101;
     let db_clone = db.clone();
 
@@ -201,7 +201,7 @@ async fn test_indexing_wrong_dimensions() {
 
 #[tokio::test]
 async fn test_row_slicing() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8102;
     let db_clone = db.clone();
 
@@ -257,7 +257,7 @@ async fn test_row_slicing() {
 
 #[tokio::test]
 async fn test_column_slicing() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8103;
     let db_clone = db.clone();
 
@@ -316,7 +316,7 @@ async fn test_column_slicing() {
 
 #[tokio::test]
 async fn test_range_slicing() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8104;
     let db_clone = db.clone();
 
@@ -374,7 +374,7 @@ async fn test_range_slicing() {
 
 #[tokio::test]
 async fn test_colon_wildcard() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8105;
     let db_clone = db.clone();
 

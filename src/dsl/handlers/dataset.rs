@@ -144,7 +144,7 @@ pub fn handle_select(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
 }
 
 pub fn build_select_query_plan(
-    db: &mut TensorDb,
+    db: &TensorDb,
     line: &str,
     line_no: usize,
 ) -> Result<LogicalPlan, DslError> {
@@ -317,7 +317,7 @@ pub fn build_select_query_plan(
 }
 
 pub fn build_dataset_query_plan(
-    db: &mut TensorDb,
+    db: &TensorDb,
     line: &str,
     line_no: usize,
 ) -> Result<(String, LogicalPlan), DslError> {

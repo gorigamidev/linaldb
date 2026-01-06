@@ -38,13 +38,22 @@ Shows how to create vector indexes and perform similarity lookups using the `SEA
 
 ## 3. Introspection & Auditing
 
-### [Introspection Demo](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/examples/introspection_demo.lnl)
+---
 
-Learn how to use `SHOW LINEAGE` to trace the history of a tensor and `AUDIT DATASET` to check data health.
+## 4. Server & Concurrency
+
+### Background Job Execution
+
+Learn how to submit long-running analytical tasks to the server's background scheduler and poll for results. See [DSL_REFERENCE.md](DSL_REFERENCE.md#8-server--job-management) for details.
+
+```bash
+# Submit a job
+curl -X POST "http://localhost:8080/jobs" -d "SHOW ALL"
+```
 
 ---
 
-## 4. Quick Start Snippets
+## 5. Quick Start Snippets
 
 ### Calculate Cosine Similarity
 

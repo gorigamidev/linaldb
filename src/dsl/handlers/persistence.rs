@@ -397,7 +397,7 @@ fn handle_load_tensor(
 /// Syntax: LIST DATASETS FROM "path"
 ///         LIST TENSORS FROM "path"
 pub fn handle_list_datasets(
-    db: &mut TensorDb,
+    db: &TensorDb,
     line: &str,
     line_no: usize,
 ) -> Result<DslOutput, DslError> {
@@ -418,7 +418,7 @@ pub fn handle_list_datasets(
 }
 
 fn handle_list_versions_impl(
-    db: &mut TensorDb,
+    db: &TensorDb,
     rest: &str,
     line_no: usize,
 ) -> Result<DslOutput, DslError> {
@@ -472,7 +472,7 @@ fn handle_list_versions_impl(
 }
 
 fn handle_list_datasets_impl(
-    _db: &mut TensorDb,
+    db: &TensorDb,
     rest: &str,
     line_no: usize,
 ) -> Result<DslOutput, DslError> {
@@ -480,9 +480,9 @@ fn handle_list_datasets_impl(
 
     let path = if rest.starts_with("FROM ") {
         let p = rest.strip_prefix("FROM ").unwrap().trim().trim_matches('"');
-        resolve_persistence_path(_db, p)
+        resolve_persistence_path(db, p)
     } else {
-        resolve_persistence_path(_db, "")
+        resolve_persistence_path(db, "")
     };
 
     let storage = ParquetStorage::new(&path);
@@ -501,7 +501,7 @@ fn handle_list_datasets_impl(
 }
 
 fn handle_list_tensors_impl(
-    _db: &mut TensorDb,
+    db: &TensorDb,
     rest: &str,
     line_no: usize,
 ) -> Result<DslOutput, DslError> {
@@ -509,9 +509,9 @@ fn handle_list_tensors_impl(
 
     let path = if rest.starts_with("FROM ") {
         let p = rest.strip_prefix("FROM ").unwrap().trim().trim_matches('"');
-        resolve_persistence_path(_db, p)
+        resolve_persistence_path(db, p)
     } else {
-        resolve_persistence_path(_db, "")
+        resolve_persistence_path(db, "")
     };
 
     let storage = ParquetStorage::new(&path);

@@ -335,3 +335,22 @@ LINAL is positioned as:
 - Columnar execution engine
 - Integration with Python / WASM
 - Native ML operators (KNN, clustering, PCA)
+
+---
+
+## Phase 14: Server Concurrency & Background Jobs ✅
+
+> Goal: Enable high-concurrency analytical reads and asynchronous workload management.
+
+- [x] **RwLock Concurrency Model**
+  - [x] Refactor from `Mutex` to `RwLock` for parallel execution
+  - [x] Thread-safe query dispatch for analytical (read-only) queries
+  - [x] Support parallel `SHOW` and `SELECT` operations
+- [x] **Asynchronous Job System**
+  - [x] Background executor for long-running DSL commands
+  - [x] REST API for job submission, polling, and result retrieval
+  - [x] Support for job cancellation
+- [x] **Operational Hardening**
+  - [x] Graceful shutdown handles (SIGINT/SIGTERM)
+  - [x] Server management CLI commands (`linal server status`)
+  - [x] Full integration test suite for concurrency and jobs

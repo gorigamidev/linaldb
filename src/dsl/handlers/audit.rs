@@ -2,7 +2,7 @@ use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
 
 /// AUDIT DATASET <name>
-pub fn handle_audit(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+pub fn handle_audit(db: &TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     let rest = line.strip_prefix("AUDIT").unwrap().trim();
 
     if rest.starts_with("DATASET ") {

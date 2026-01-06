@@ -1,12 +1,12 @@
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use tokio::time::sleep;
 use linal::engine::TensorDb;
 use linal::server::start_server;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
+use tokio::time::sleep;
 
 #[tokio::test]
 async fn test_expression_indexing() {
-    let db = Arc::new(Mutex::new(TensorDb::new()));
+    let db = Arc::new(RwLock::new(TensorDb::new()));
     let port = 8110;
     let db_clone = db.clone();
 

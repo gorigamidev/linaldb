@@ -46,8 +46,8 @@ Latest benchmarks show **34% to 75% regressions** in core vector/matrix operatio
 
 **Goal**: Production stability.
 
-- [x] **Arena-Backed Tensors**: Allow `ExecutionContext` to allocate tensor data in the `Bump` arena for ephemeral results.
 - [x] **Memory Limit Enforcement**: Kill queries that exceed per-context arena limits.
+- [x] **RwLock Concurrency**: Transitioned server state from `Mutex` to `RwLock`, enabling parallel execution of read-only analytical queries.
 - [ ] **Persistent Scheduler Queue**: Move tasks to a disk-backed queue.
   - **Status**: Deferred - Not a performance optimization
   - **Reason**: Requires disk backend (sled/rocksdb), task serialization, server changes
@@ -81,6 +81,7 @@ Latest benchmarks show **34% to 75% regressions** in core vector/matrix operatio
 | Rayon Parallelization | Phase 3 | **Done** | Multi-threaded kernels for large tensors. |
 | Asset Timeouts | Phase 4 | **Done** | Implemented in Server. |
 | Resource Limits | Phase 4 | **Done** | Memory limits + arena allocation. |
+| Server Concurrency | Phase 12 | **Done** | Parallel reads via `RwLock`. |
 | Tensor Pooling | Phase 11 | **Complete** | Size threshold optimization, zero regression. |
 
 ---

@@ -1,6 +1,7 @@
+pub mod jobs;
 pub mod scheduler;
 
-use crate::dsl::{execute_line, DslOutput};
+use crate::dsl::{execute_line, execute_line_shared, is_read_only, DslOutput};
 use crate::engine::TensorDb;
 use axum::{
     extract::{Query, State},
@@ -10,14 +11,15 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use toon_format::encode_default;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 struct AppState {
-    db: Arc<Mutex<TensorDb>>,
+    db: Arc<RwLock<TensorDb>>,
     scheduler: Arc<scheduler::Scheduler>,
+    job_manager: Arc<jobs::JobManager>,
 }
 
 const MAX_COMMAND_LENGTH: usize = 16 * 1024; // 16KB
@@ -71,14 +73,19 @@ pub struct ScheduleRequest {
 )]
 struct ApiDoc;
 
-pub async fn start_server(db: Arc<Mutex<TensorDb>>, port: u16) {
+pub async fn start_server(db: Arc<RwLock<TensorDb>>, port: u16) {
     let scheduler = Arc::new(scheduler::Scheduler::new(db.clone()));
+    let job_manager = Arc::new(jobs::JobManager::new());
     let scheduler_handle = scheduler.clone();
     tokio::spawn(async move {
         scheduler_handle.start().await;
     });
 
-    let state = Arc::new(AppState { db, scheduler });
+    let state = Arc::new(AppState {
+        db,
+        scheduler,
+        job_manager,
+    });
 
     let app = Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
@@ -91,12 +98,45 @@ pub async fn start_server(db: Arc<Mutex<TensorDb>>, port: u16) {
         )
         .route("/schedule", get(list_schedules).post(create_schedule))
         .route("/schedule/:id", delete(delete_schedule))
+        .route("/jobs", get(list_jobs).post(submit_job))
+        .route("/jobs/:id", get(get_job).delete(cancel_job))
+        .route("/jobs/:id/result", get(get_job_result))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", port);
     println!("Server running at http://{}", addr);
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    println!("Shutdown signal received, starting graceful shutdown...");
 }
 
 #[utoipa::path(
@@ -193,20 +233,36 @@ async fn execute_command(
     let exec_result = tokio::time::timeout(
         std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
         tokio::task::spawn_blocking(move || {
-            let mut db = db_arc.lock().unwrap();
-            let prev_db = db.active_db().to_string();
+            let read_only = is_read_only(&command_clone);
+            let prev_db_name;
 
-            if let Some(db_name) = target_db {
-                db.use_database(&db_name)
-                    .map_err(|e| crate::dsl::DslError::Engine { line: 0, source: e })?;
+            // Determine if we need a write lock for DB switching
+            let needs_write_lock_for_db_switch = if let Some(ref db_name) = target_db {
+                let db_read = db_arc.read().unwrap();
+                prev_db_name = db_read.active_db().to_string();
+                db_name != &prev_db_name
+            } else {
+                let db_read = db_arc.read().unwrap();
+                prev_db_name = db_read.active_db().to_string();
+                false
+            };
+
+            if read_only && !needs_write_lock_for_db_switch {
+                let db = db_arc.read().unwrap();
+                execute_line_shared(&db, &command_clone, 1)
+            } else {
+                let mut db = db_arc.write().unwrap();
+                if let Some(db_name) = target_db {
+                    db.use_database(&db_name)
+                        .map_err(|e| crate::dsl::DslError::Engine { line: 0, source: e })?;
+                }
+
+                let result = execute_line(&mut db, &command_clone, 1);
+
+                // Restore previous database to ensure per-request isolation
+                let _ = db.use_database(&prev_db_name);
+                result
             }
-
-            let result = execute_line(&mut db, &command_clone, 1);
-
-            // Restore previous database to ensure per-request isolation
-            let _ = db.use_database(&prev_db);
-
-            result
         }),
     )
     .await;
@@ -315,16 +371,16 @@ async fn delete_schedule(
 }
 
 async fn list_databases(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let db = state.db.lock().unwrap();
-    let dbs = db.list_databases();
-    Json(serde_json::json!({ "status": "ok", "databases": dbs }))
+    let db = state.db.read().unwrap();
+    let databases = db.list_databases();
+    Json(serde_json::json!({ "status": "ok", "databases": databases }))
 }
 
 async fn create_database(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    let mut db = state.db.lock().unwrap();
+    let mut db = state.db.write().unwrap();
     match db.create_database(name.clone()) {
         Ok(_) => (
             StatusCode::CREATED,
@@ -343,7 +399,7 @@ async fn delete_database(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    let mut db = state.db.lock().unwrap();
+    let mut db = state.db.write().unwrap();
     match db.drop_database(&name) {
         Ok(_) => (
             StatusCode::OK,
@@ -355,5 +411,189 @@ async fn delete_database(
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "status": "error", "error": format!("{}", e) })),
         ),
+    }
+}
+
+// --- Job Handlers ---
+
+async fn list_jobs(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let jobs = state.job_manager.list_jobs();
+    Json(serde_json::json!({ "status": "ok", "jobs": jobs }))
+}
+
+async fn submit_job(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    body: String,
+) -> impl IntoResponse {
+    let command = body.trim().to_string();
+    if command.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "status": "error", "message": "Command cannot be empty" })),
+        )
+            .into_response();
+    }
+
+    let target_db = headers
+        .get("X-Linal-Database")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let job_id = state
+        .job_manager
+        .create_job(command.clone(), target_db.clone());
+
+    // Spawn background execution
+    let db_arc = state.db.clone();
+    let mgr = state.job_manager.clone();
+    let job_id_clone = job_id;
+
+    tokio::spawn(async move {
+        mgr.update_job_status(job_id_clone, jobs::JobStatus::Running);
+
+        let read_only = is_read_only(&command);
+
+        let res = tokio::task::spawn_blocking(move || {
+            if read_only {
+                let db = db_arc.read().unwrap();
+                let prev_db = db.active_db().to_string();
+
+                // Shared execution doesn't support changing DB easily if we want purely parallel.
+                // But for now we just use a read lock.
+                // NOTE: use_database needs a WRITE lock currently.
+                // If the user specified a target_db different from actual, we might need a write lock even if command is SHOW.
+                // To keep it simple, if target_db is set, we use write lock for now.
+                if target_db.is_some() && target_db.as_ref().unwrap() != &prev_db {
+                    drop(db); // release read lock
+                    let mut db_write = db_arc.write().unwrap();
+                    let _ = db_write.use_database(&target_db.unwrap());
+                    let exec_res = execute_line_shared(&db_write, &command, 1);
+                    let _ = db_write.use_database(&prev_db);
+                    return exec_res;
+                }
+
+                execute_line_shared(&db, &command, 1)
+            } else {
+                let mut db = db_arc.write().unwrap();
+                let prev_db = db.active_db().to_string();
+
+                if let Some(db_name) = target_db {
+                    let _ = db.use_database(&db_name);
+                }
+
+                let exec_res = execute_line(&mut db, &command, 1);
+
+                let _ = db.use_database(&prev_db);
+                exec_res
+            }
+        })
+        .await;
+
+        match res {
+            Ok(Ok(output)) => mgr.finish_job(job_id_clone, Ok(output)),
+            Ok(Err(e)) => mgr.finish_job(job_id_clone, Err(format!("{}", e))),
+            Err(e) => mgr.finish_job(job_id_clone, Err(format!("Task panicked: {}", e))),
+        }
+    });
+
+    (
+        StatusCode::ACCEPTED,
+        Json(serde_json::json!({ "status": "ok", "job_id": job_id })),
+    )
+        .into_response()
+}
+
+async fn get_job(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id_str): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    match uuid::Uuid::parse_str(&id_str) {
+        Ok(id) => match state.job_manager.get_job(id) {
+            Some(job) => (
+                StatusCode::OK,
+                Json(serde_json::json!({ "status": "ok", "job": job })),
+            )
+                .into_response(),
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "status": "error", "message": "Job not found" })),
+            )
+                .into_response(),
+        },
+        Err(_) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "status": "error", "message": "Invalid UUID" })),
+        )
+            .into_response(),
+    }
+}
+
+async fn cancel_job(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id_str): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    // Current implementation doesn't support killing threads easily in spawn_blocking
+    // We just mark it as failed if it's still pending
+    match uuid::Uuid::parse_str(&id_str) {
+        Ok(id) => {
+            if let Some(job) = state.job_manager.get_job(id) {
+                if job.status == jobs::JobStatus::Pending {
+                    state
+                        .job_manager
+                        .update_job_status(id, jobs::JobStatus::Failed);
+                    return (StatusCode::OK, Json(serde_json::json!({ "status": "ok", "message": "Pending job cancelled" }))).into_response();
+                }
+                (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "status": "error", "message": "Cannot cancel running or finished job" }))).into_response()
+            } else {
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "status": "error", "message": "Job not found" })),
+                )
+                    .into_response()
+            }
+        }
+        Err(_) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "status": "error", "message": "Invalid UUID" })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_job_result(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id_str): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    match uuid::Uuid::parse_str(&id_str) {
+        Ok(id) => match state.job_manager.get_job(id) {
+            Some(job) => {
+                if job.status == jobs::JobStatus::Completed {
+                    (
+                        StatusCode::OK,
+                        Json(serde_json::json!({ "status": "ok", "result": job.result })),
+                    )
+                        .into_response()
+                } else if job.status == jobs::JobStatus::Failed {
+                    (
+                        StatusCode::OK,
+                        Json(serde_json::json!({ "status": "error", "error": job.error })),
+                    )
+                        .into_response()
+                } else {
+                    (StatusCode::ACCEPTED, Json(serde_json::json!({ "status": "pending", "message": "Job still processing" }))).into_response()
+                }
+            }
+            None => (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "status": "error", "message": "Job not found" })),
+            )
+                .into_response(),
+        },
+        Err(_) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "status": "error", "message": "Invalid UUID" })),
+        )
+            .into_response(),
     }
 }

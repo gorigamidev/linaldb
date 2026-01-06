@@ -105,29 +105,29 @@ Each phase builds on top of the existing codebase and preserves backward compati
 
 ---
 
-## 🟠 Phase 3 — Server Mode & Parallel Execution
+## 🟠 Phase 3 — Server Mode & Parallel Execution [DONE]
 
 **Goal:** Enable long-running, concurrent analytical workloads.
 
 ### Server Mode
 
-- [ ] Optional daemon/server mode
-- [ ] Explicit separation: Embedded vs Server
-- [ ] Server-managed sessions
-- [ ] Graceful startup / shutdown
+- [x] Optional daemon/server mode
+- [x] Explicit separation: Embedded vs Server
+- [x] Server-managed sessions (foundation implemented via State)
+- [x] Graceful startup / shutdown (SIGINT/SIGTERM handles)
 
 ### Execution
 
-- [ ] Job abstraction (submit / run / query status)
-- [ ] Parallel execution using Rust concurrency primitives
-- [ ] Resource isolation per job
-- [ ] Deterministic results regardless of execution order
+- [x] Job abstraction (submit / run / query status)
+- [x] Parallel execution using Rust `RwLock` primitives
+- [x] Resource isolation per job (analytical read isolation)
+- [x] Deterministic results regardless of execution order
 
 ### Shared State
 
-- [ ] Shared dataset registry across sessions
-- [ ] Safe concurrent reads
-- [ ] Explicit write semantics (no implicit mutation)
+- [x] Shared dataset registry across sessions
+- [x] Safe concurrent reads (High-concurrency analytical queries)
+- [x] Explicit write semantics (RwLock promotion for mutations)
 
 ### Retrocompatibility
 

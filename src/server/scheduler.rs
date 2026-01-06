@@ -1,7 +1,7 @@
 use crate::dsl::execute_line;
 use crate::engine::TensorDb;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::time::sleep;
 use uuid::Uuid;
@@ -17,12 +17,12 @@ pub struct ScheduledTask {
 }
 
 pub struct Scheduler {
-    db: Arc<Mutex<TensorDb>>,
+    db: Arc<RwLock<TensorDb>>,
     tasks: Arc<Mutex<Vec<ScheduledTask>>>,
 }
 
 impl Scheduler {
-    pub fn new(db: Arc<Mutex<TensorDb>>) -> Self {
+    pub fn new(db: Arc<RwLock<TensorDb>>) -> Self {
         Self {
             db,
             tasks: Arc::new(Mutex::new(Vec::new())),
@@ -86,7 +86,7 @@ impl Scheduler {
             for task in tasks_to_run {
                 let db_arc = self.db.clone();
                 tokio::task::spawn_blocking(move || {
-                    let mut db = db_arc.lock().unwrap();
+                    let mut db = db_arc.write().unwrap();
                     if let Some(db_name) = &task.target_db {
                         let _ = db.use_database(db_name);
                     }

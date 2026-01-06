@@ -250,13 +250,17 @@ The query module implements query planning and optimization:
 
 ### 5. Server Module (`src/server/`)
 
-HTTP server implementation:
+HTTP server implementation built with **Axum**:
 
-- REST API endpoint (`POST /execute`)
-- OpenAPI/Swagger documentation (`/swagger-ui`)
-- Query timeout (30s)
-- Request validation (size limits, non-empty checks)
-- Support for TOON and JSON output formats
+- **High-Concurrency Model**: Uses `Arc<RwLock<TensorDb>>` to allow multiple parallel read operations (analytical queries) while maintaining exclusive access for state-modifying commands.
+- **Asynchronous Job System** (`jobs.rs`):
+  - `POST /jobs`: Submit long-running queries for background execution.
+  - `GET /jobs/:id`: Poll for status (Pending, Running, Completed, Failed).
+  - `GET /jobs/:id/result`: Retrieve structured `DslOutput`.
+- **Background Scheduler** (`scheduler.rs`): Cron-like execution of DSL commands registered at runtime.
+- **Multi-tenant Isolation**: Isolated database contexts via `X-Linal-Database` header.
+- **Graceful Shutdown**: Native support for `SIGINT` and `SIGTERM` to ensure in-flight requests complete before termination.
+- **OpenAPI/Swagger documentation**: Interactive API explorer at `/swagger-ui`.
 
 ### 6. Utils Module (`src/utils/`)
 

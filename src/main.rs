@@ -6,7 +6,7 @@ use linal::server::start_server;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::fs;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use toon_format::encode_default;
 
 #[derive(Parser)]
@@ -34,8 +34,10 @@ enum Commands {
         #[arg(long, default_value = "display")]
         format: String,
     },
-    /// Start HTTP server
+    /// Server management
     Server {
+        #[command(subcommand)]
+        action: Option<ServerAction>,
         #[arg(long, default_value_t = 8080)]
         port: u16,
     },
@@ -80,6 +82,16 @@ enum Commands {
         #[arg(long, default_value = "display")]
         format: String,
     },
+}
+
+#[derive(Subcommand)]
+enum ServerAction {
+    /// Start the server (default)
+    Start,
+    /// Check server status
+    Status,
+    /// Stop the server gracefully
+    Stop,
 }
 
 #[derive(Subcommand)]
@@ -160,9 +172,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         }
-        Some(Commands::Server { port }) | Some(Commands::Serve { port }) => {
-            // Need Arc<Mutex<TensorDb>>
-            let db_arc = Arc::new(Mutex::new(db));
+        Some(Commands::Server { action, port }) => {
+            let action = action.unwrap_or(ServerAction::Start);
+            match action {
+                ServerAction::Start => {
+                    let db_arc = Arc::new(RwLock::new(db));
+                    start_server(db_arc, port).await;
+                }
+                ServerAction::Status => {
+                    handle_server_status(port).await?;
+                }
+                ServerAction::Stop => {
+                    handle_server_stop(port).await?;
+                }
+            }
+        }
+        Some(Commands::Serve { port }) => {
+            let db_arc = Arc::new(RwLock::new(db));
             start_server(db_arc, port).await;
         }
         Some(Commands::Init) => {
@@ -446,4 +472,37 @@ fn handle_exec(
             Err(e.into())
         }
     }
+}
+async fn handle_server_status(port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    let client = reqwest::Client::new();
+    let url = format!("http://localhost:{}/health", port);
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                println!("{} Server is running on port {}", "✓".green(), port);
+                let body = resp.text().await?;
+                println!("Status: {}", body.cyan());
+            } else {
+                println!(
+                    "{} Server on port {} returned error: {}",
+                    "✗".red(),
+                    port,
+                    resp.status()
+                );
+            }
+        }
+        Err(_) => {
+            println!("{} Server is not running on port {}", "✗".red(), port);
+        }
+    }
+    Ok(())
+}
+
+async fn handle_server_stop(_port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    println!(
+        "{} Graceful stop via CLI not yet fully implemented for all platforms.",
+        "!".yellow()
+    );
+    println!("Please use Ctrl+C or kill the process directly.");
+    Ok(())
 }
