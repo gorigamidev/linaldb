@@ -136,11 +136,15 @@ The core module contains fundamental data structures and abstractions:
 - **Zero-Copy Guarantees**: Adding a column is an O(1) metadata operation. Underlying tensor data is shared via atomic reference counting (`Arc`), ensuring no data duplication.
 - **Materialization**: While datasets are views in-memory, they can be materialized into physical rows and persisted via standard Parquet for portability.
 
-#### `dataset_legacy.rs` (Row-Based)
+#### `dataset/metadata.rs`
 
-- **Dataset**: Traditional row-oriented collection of `Tuple`s.
-- **DatasetMetadata**: Versioning, timestamps, custom metadata.
-- **ColumnStats**: Statistics for query optimization.
+- **DatasetMetadata**: The central structure for dataset lifecycle management.
+  - **Versioning**: Monotonically increasing version number for every `SAVE` operation.
+  - **Identity**: Content-based hashing for integrity verification.
+  - **Provenance**: `DatasetOrigin` tracking (Created, Imported, Derived, etc.).
+  - **Evolution**: `SchemaHistory` recording every schema change with migration context.
+  - **Timestamps**: `created_at` and `updated_at` (SystemTime) with microsecond precision.
+  - **Custom Tags**: User-defined key-value pairs (`SET DATASET METADATA`).
 
 #### `store/`
 
@@ -338,9 +342,11 @@ GROUP BY queries:
 
 #### Datasets (Parquet)
 
-- Columnar format for efficient storage
-- Metadata stored separately in JSON
-- Schema preserved
+- **Data**: Columnar Apache Parquet format for high-performance retrieval.
+- **Metadata**: Stored in JSON format with two distinct naming conventions:
+  - `.metadata.json`: The standard format for all new datasets, containing rich metadata, versioning, and schema history.
+  - `.meta.json`: Legacy format maintained for backward compatibility.
+- **Path Resolution**: The engine uses a managed directory structure: `data_dir / db_name / [optional_subpath] / datasets / [name].parquet`.
 
 #### Tensors (JSON)
 

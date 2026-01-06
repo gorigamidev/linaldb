@@ -1,0 +1,59 @@
+// LINAL Phase 2 Demo: Dataset Persistence & Lifecycle
+// This script demonstrates the features implemented in Phase 2:
+// 1. Dataset Metadata
+// 2. Persistent Storage (Parquet + Metadata)
+// 3. Versioning & Schema History
+// 4. Metadata Introspection
+
+SHOW "--- Phase 2 Persistence & Lifecycle Demo ---"
+
+// 1. Create a fresh dataset
+DATASET users COLUMNS (
+    id: Int,
+    name: String,
+    score: Float
+)
+
+// INSERT INTO does not support column lists, only values for all columns
+INSERT INTO users VALUES (1, "Alice", 0.95)
+INSERT INTO users VALUES (2, "Bob", 0.88)
+
+SHOW "Initial Dataset Created:"
+SHOW SCHEMA users
+
+// 2. Save the dataset (v1)
+// Using default location (./data/<instance>/datasets/users.parquet)
+SAVE DATASET users
+SHOW "Dataset Saved (v1)"
+
+// 3. Set custom metadata
+SET DATASET users METADATA author = "LINAL Admin"
+SET DATASET users METADATA description = "Phase 2 demonstration dataset"
+SET DATASET users METADATA tag = "demo"
+SET DATASET users METADATA tag = "v1-stable"
+
+SHOW "Metadata Updated (In-Memory & Persistent):"
+SHOW DATASET METADATA users
+
+// 4. Update the schema (Non-breaking change)
+// We create a new dataset from the old one and add a computed column.
+DATASET users_v2 FROM users SELECT id, name, score
+ALTER DATASET users_v2 ADD COLUMN double_id = id * 2
+
+// Save the new version
+SAVE DATASET users_v2
+
+SHOW "Dataset Updated and Saved (v1 because it's a new name)"
+
+// 5. Inspect Version History
+SHOW "Version History for 'users_v2':"
+LIST DATASET VERSIONS users_v2
+
+// 6. Reload from disk
+// This will restore the dataset and its persistent metadata
+LOAD DATASET restored_users FROM "users"
+
+SHOW "Restored Dataset Metadata:"
+SHOW DATASET METADATA restored_users
+
+SHOW "--- Demo Complete ---"

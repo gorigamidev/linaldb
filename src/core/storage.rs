@@ -102,6 +102,10 @@ impl ParquetStorage {
         format!("{}/datasets/{}.meta.json", self.base_path, name)
     }
 
+    fn persistent_metadata_path(&self, name: &str) -> String {
+        format!("{}/datasets/{}.metadata.json", self.base_path, name)
+    }
+
     fn tensor_path(&self, name: &str) -> String {
         format!("{}/tensors/{}.json", self.base_path, name)
     }
@@ -112,6 +116,44 @@ impl ParquetStorage {
         fs::create_dir_all(datasets_dir)?;
         fs::create_dir_all(tensors_dir)?;
         Ok(())
+    }
+
+    /// Save dataset metadata to JSON file
+    pub fn save_dataset_metadata(
+        &self,
+        metadata: &crate::core::dataset::DatasetMetadata,
+    ) -> Result<(), StorageError> {
+        self.ensure_directories()?;
+        let path = self.persistent_metadata_path(&metadata.name);
+        let json = serde_json::to_string_pretty(metadata).map_err(|e| {
+            StorageError::Serialization(format!("Failed to serialize metadata: {}", e))
+        })?;
+        fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Load dataset metadata from JSON file
+    pub fn load_dataset_metadata(
+        &self,
+        name: &str,
+    ) -> Result<crate::core::dataset::DatasetMetadata, StorageError> {
+        let path = self.persistent_metadata_path(name);
+        if !Path::new(&path).exists() {
+            return Err(StorageError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Metadata file not found: {}", path),
+            )));
+        }
+        let json = fs::read_to_string(path)?;
+        let metadata = serde_json::from_str(&json).map_err(|e| {
+            StorageError::Serialization(format!("Failed to deserialize metadata: {}", e))
+        })?;
+        Ok(metadata)
+    }
+
+    /// Check if metadata exists for a dataset
+    pub fn metadata_exists(&self, name: &str) -> bool {
+        Path::new(&self.persistent_metadata_path(name)).exists()
     }
 }
 

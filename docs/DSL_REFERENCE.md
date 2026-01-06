@@ -143,6 +143,31 @@ SHOW v
 SHOW SCHEMA analytics
 SHOW LINEAGE result
 SHOW ALL DATASETS
+### SHOW DATASET METADATA
+
+Inspect a dataset's current metadata (including version, origin, timestamps, and custom tags).
+
+```sql
+SHOW DATASET METADATA analytics
+```
+
+### LIST DATASET VERSIONS
+
+Show the history of schema and metadata changes for a specific dataset.
+
+```sql
+LIST DATASET VERSIONS analytics
+```
+
+### SET DATASET METADATA
+
+Update specific metadata fields for a dataset. Supported fields: `author`, `description`, `tag` (can be called multiple times to add multiple tags).
+
+```sql
+SET DATASET analytics METADATA author = "Nicolas"
+SET DATASET analytics METADATA description = "Analysis of Q1 results"
+SET DATASET analytics METADATA tag = "production"
+SET DATASET analytics METADATA tag = "v1-stable"
 ```
 
 ### AUDIT
@@ -165,12 +190,12 @@ EXPLAIN SELECT * FROM users WHERE id > 10
 
 ## 6. Persistence
 
-- `SAVE DATASET <name>`: Persist dataset to Parquet.
-- `SAVE TENSOR <name>`: Persist tensor data to JSON.
-- `LOAD DATASET <name>`: Recover dataset from disk.
-- `LIST DATASETS`: Show all persisted datasets.
-- `IMPORT CSV FROM "path"`: Import CSV with schema inference.
-- `EXPORT CSV <name> TO "path"`: Export dataset to CSV.
+- `SAVE DATASET <name> [TO "path"]`: Persist dataset and its metadata to Parquet/JSON. If path is omitted, use the managed database directory.
+- `SAVE TENSOR <name> [TO "path"]`: Persist tensor data to JSON.
+- `LOAD DATASET <target> [FROM "source_path"]`: Recover a dataset. If `FROM` is specified, the dataset is loaded from the source path (which can be a filename or directory) and registered in-memory as `<target>`.
+- `LIST DATASETS`: Show all persisted datasets in the current database context.
+- `IMPORT CSV FROM "path" AS <name>`: Import CSV with automatic schema inference.
+- `EXPORT CSV <name> TO "path"`: Export dataset to CSV format.
 
 ---
 

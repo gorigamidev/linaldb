@@ -77,3 +77,17 @@ impl DatasetSchema {
         self.columns.iter().find(|c| c.name == name)
     }
 }
+
+impl From<crate::core::tuple::Schema> for DatasetSchema {
+    fn from(legacy: crate::core::tuple::Schema) -> Self {
+        let columns = legacy
+            .fields
+            .into_iter()
+            .map(|f| {
+                ColumnSchema::new(f.name, f.value_type, Shape::new(vec![])) // Default shape for non-tensor columns
+                    .with_nullable(f.nullable)
+            })
+            .collect();
+        Self { columns }
+    }
+}

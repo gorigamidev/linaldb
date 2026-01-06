@@ -230,7 +230,7 @@ pub fn execute_line_with_context(
         handlers::persistence::handle_save(db, line, line_no)
     } else if line.starts_with("LOAD ") {
         handlers::persistence::handle_load(db, line, line_no)
-    } else if line.starts_with("LIST DATASETS") || line.starts_with("LIST TENSORS") {
+    } else if line.starts_with("LIST ") {
         handlers::persistence::handle_list_datasets(db, line, line_no)
     } else if line.starts_with("IMPORT ") {
         handlers::persistence::handle_import(db, line, line_no)

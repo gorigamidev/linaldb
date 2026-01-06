@@ -145,18 +145,22 @@ USE default
 SHOW ALL DATASETS
 ```
 
-### 6. Robust Metadata System
+### 6. Persistent Metadata & Dataset Lifecycle (New!)
 
-Add custom, searchable metadata and versioning to your datasets.
+Add custom, searchable metadata, versioning, and full schema evolution history to your datasets.
 
 ```sql
--- Set custom metadata tags and versions
-SET DATASET users METADATA version = "1.0.0"
-SET DATASET users METADATA tags = "scientific,test"
+-- Set custom metadata
+SET DATASET users METADATA author = "Nicolas"
+SET DATASET users METADATA description = "Analysis of Q1 results"
+SET DATASET users METADATA tag = "production"
 
--- Metadata is automatically tracked with ISO-8601 timestamps
--- (created_at, updated_at) and custom 'extra' fields.
+-- Inspect metadata & version history (now supports both legacy and persistent formats)
+SHOW DATASET METADATA users
+LIST DATASET VERSIONS users
 ```
+
+Metadata is automatically persisted to `.metadata.json` files alongside your Parquet data, ensuring that version increments, schema history, and custom tags survive system restarts. Legacy metadata (if present) is maintained in `.meta.json` for backward compatibility.
 
 ### 7. Explicit Semantics & Lineage (New!)
 

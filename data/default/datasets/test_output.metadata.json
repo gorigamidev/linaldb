@@ -1,0 +1,40 @@
+{
+  "name": "test_output",
+  "version": 1,
+  "hash": "test_ds:3",
+  "origin": "Created",
+  "schema_version": 2,
+  "schema_history": [
+    {
+      "version": 2,
+      "schema": {
+        "columns": [
+          {
+            "name": "vec",
+            "value_type": "Float",
+            "shape": {
+              "dims": []
+            },
+            "role": "generic",
+            "nullable": false
+          },
+          {
+            "name": "vec_doubled",
+            "value_type": "Float",
+            "shape": {
+              "dims": []
+            },
+            "role": "generic",
+            "nullable": false
+          }
+        ]
+      },
+      "migration": null
+    }
+  ],
+  "created_at": 1767670746,
+  "updated_at": 1767670746,
+  "author": null,
+  "description": null,
+  "tags": []
+}

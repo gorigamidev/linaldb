@@ -1,3 +1,4 @@
+use super::metadata::DatasetMetadata;
 use super::reference::ResourceReference;
 use super::schema::DatasetSchema;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ pub struct Dataset {
     pub name: String,
     pub schema: DatasetSchema,
     pub columns: HashMap<String, ResourceReference>,
+    pub metadata: Option<DatasetMetadata>,
 }
 
 impl Dataset {
@@ -18,6 +20,7 @@ impl Dataset {
             name: name.into(),
             schema: DatasetSchema::default(),
             columns: HashMap::new(),
+            metadata: None,
         }
     }
 

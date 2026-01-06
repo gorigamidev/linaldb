@@ -1,8 +1,9 @@
+use crate::core::dataset::{DatasetMetadata, DatasetOrigin};
 use crate::core::storage::{CsvStorage, ParquetStorage, StorageEngine};
 use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Handle SAVE command
 /// Syntax: SAVE DATASET dataset_name TO "path"
@@ -29,16 +30,10 @@ fn resolve_persistence_path(db: &TensorDb, path: &str) -> String {
         return path.to_string();
     }
 
-    // Check if it already looks like it's inside a managed directory
-    if path.starts_with("./data") {
-        return path.to_string();
-    }
-
     // If it's a simple filename or a relative path, put it in data_dir/db_name/
     let mut resolved = db.config.storage.data_dir.clone();
     resolved.push(&db.active_instance().name);
 
-    // If path is just a filename, this works. If it's "subdir/file", it also works.
     if !path.is_empty() {
         resolved.push(path);
     }
@@ -59,20 +54,33 @@ fn handle_save_dataset(
     let rest = rest.strip_prefix("DATASET ").unwrap().trim();
 
     // Check for " TO " keyword
-    let (dataset_name, path) = if let Some(idx) = rest.find(" TO ") {
+    let (dataset_name, disk_name, path) = if let Some(idx) = rest.find(" TO ") {
         let name = rest[..idx].trim();
-        let p = rest[idx + 4..].trim().trim_matches('"');
-        (name, resolve_persistence_path(db, p))
+        let p_str = rest[idx + 4..].trim().trim_matches('"');
+        let p_path = Path::new(p_str);
+
+        if p_path.extension().is_some() {
+            // File-like path: "path/to/file.parquet"
+            let disk_name = p_path
+                .file_stem()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or(name);
+            let parent_str = p_path
+                .parent()
+                .map(|p| p.to_str().unwrap_or(""))
+                .unwrap_or("");
+            (name, disk_name, resolve_persistence_path(db, parent_str))
+        } else {
+            // Directory-like path: "path/to/dir"
+            (name, name, resolve_persistence_path(db, p_str))
+        }
     } else {
-        // Default path: data_dir / active_db / dataset_name.parquet (implicit)
-        // Actually, the storage engine handles the filename if it's a directory.
-        // But here we need a path.
-        let p = resolve_persistence_path(db, "");
-        (rest, p)
+        (rest, rest, resolve_persistence_path(db, ""))
     };
 
     // Get dataset from store using public method
-    let dataset = match db.get_dataset(dataset_name) {
+    let mut dataset = match db.get_dataset(dataset_name) {
         Ok(ds) => ds.clone(),
         Err(_) => db
             .materialize_tensor_dataset(dataset_name)
@@ -81,6 +89,11 @@ fn handle_save_dataset(
                 source: e,
             })?,
     };
+
+    // Temporarily rename dataset to disk name for saving if they differ
+    if disk_name != dataset_name {
+        dataset.metadata.name = Some(disk_name.to_string());
+    }
 
     // Save using storage engine
     let storage = ParquetStorage::new(&path);
@@ -91,9 +104,40 @@ fn handle_save_dataset(
             msg: format!("Failed to save dataset: {}", e),
         })?;
 
+    // Create or update metadata
+    // Use disk_name for metadata file to match parquet file
+    let mut metadata = if storage.metadata_exists(disk_name) {
+        // Load existing metadata and increment version
+        let mut meta = storage
+            .load_dataset_metadata(disk_name)
+            .unwrap_or_else(|_| {
+                DatasetMetadata::new(disk_name.to_string(), DatasetOrigin::Created)
+            });
+        meta.increment_version();
+        meta
+    } else {
+        // Create new metadata
+        DatasetMetadata::new(disk_name.to_string(), DatasetOrigin::Created)
+    };
+
+    // Compute content hash (simple hash of dataset name + row count for now)
+    let content_hash = format!("{}:{}", dataset_name, dataset.rows.len());
+    metadata.update_hash(content_hash);
+
+    // Record schema in history
+    metadata.record_schema(dataset.schema.as_ref().clone().into());
+
+    // Save metadata
+    storage
+        .save_dataset_metadata(&metadata)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Failed to save metadata: {}", e),
+        })?;
+
     Ok(DslOutput::Message(format!(
-        "Saved dataset '{}' to '{}'",
-        dataset_name, path
+        "Saved dataset '{}' (v{}) to '{}'",
+        dataset_name, metadata.version, path
     )))
 }
 
@@ -164,32 +208,90 @@ fn handle_load_dataset(
     let rest = rest.strip_prefix("DATASET ").unwrap().trim();
 
     // Check for " FROM " keyword
-    let (dataset_name, path) = if let Some(idx) = rest.find(" FROM ") {
-        let name = rest[..idx].trim();
-        let p = rest[idx + 6..].trim().trim_matches('"');
-        (name, resolve_persistence_path(db, p))
+    let (dataset_name, disk_name, path) = if rest.contains(" FROM ") {
+        let parts: Vec<&str> = rest.splitn(2, " FROM ").collect();
+        let name = parts[0].trim();
+        let p_str = parts[1].trim().trim_matches('"');
+        let p_path = Path::new(p_str);
+
+        if p_path.extension().is_some() {
+            // File-like path
+            let disk_name = p_path
+                .file_stem()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or(p_str);
+            let parent_str = p_path
+                .parent()
+                .map(|p| p.to_str().unwrap_or(""))
+                .unwrap_or("");
+            (name, disk_name, resolve_persistence_path(db, parent_str))
+        } else {
+            // Directory-like path
+            (name, name, resolve_persistence_path(db, p_str))
+        }
     } else {
         let p = resolve_persistence_path(db, "");
-        (rest, p)
+        (rest, rest, p)
     };
 
     // 1. Try loading as a reference-based dataset
     let storage = ParquetStorage::new(&path);
-    if let Ok(dataset) = storage.load_reference_dataset(dataset_name) {
+    if let Ok(mut dataset) = storage.load_reference_dataset(disk_name) {
+        // Try to load metadata if it exists
+        let metadata_info = if storage.metadata_exists(disk_name) {
+            if let Ok(meta) = storage.load_dataset_metadata(disk_name) {
+                let info = format!(
+                    " (v{}, {})",
+                    meta.version,
+                    match meta.origin {
+                        crate::core::dataset::DatasetOrigin::Created => "Created",
+                        crate::core::dataset::DatasetOrigin::Imported { .. } => "Imported",
+                        crate::core::dataset::DatasetOrigin::Derived { .. } => "Derived",
+                        crate::core::dataset::DatasetOrigin::Bound { .. } => "Bound",
+                        crate::core::dataset::DatasetOrigin::Attached { .. } => "Attached",
+                    }
+                );
+                dataset.metadata = Some(meta);
+                info
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // Rename if target name is different
+        if dataset_name != disk_name {
+            dataset.name = dataset_name.to_string();
+            if let Some(meta) = &mut dataset.metadata {
+                meta.name = dataset_name.to_string();
+            }
+        }
+
         db.active_instance_mut().register_tensor_dataset(dataset);
+
         return Ok(DslOutput::Message(format!(
-            "Loaded reference dataset '{}' from '{}'",
-            dataset_name, path
+            "Loaded reference dataset '{}'{} from '{}'",
+            dataset_name, metadata_info, path
         )));
     }
 
     // 2. Fallback to legacy dataset loading
-    let dataset = storage
-        .load_dataset(dataset_name)
+    let mut dataset = storage
+        .load_dataset(disk_name)
         .map_err(|e| DslError::Parse {
             line: line_no,
-            msg: format!("Failed to load dataset: {}", e),
+            msg: format!(
+                "Failed to load dataset '{}' from '{}': {}",
+                disk_name, path, e
+            ),
         })?;
+
+    // Rename if target name is different
+    if dataset_name != disk_name {
+        dataset.metadata.name = Some(dataset_name.to_string());
+    }
 
     // Insert into DB
     // We explicitly insert the dataset. create_dataset usually takes name+schema.
@@ -305,12 +407,68 @@ pub fn handle_list_datasets(
         handle_list_datasets_impl(db, rest, line_no)
     } else if rest.starts_with("TENSORS") {
         handle_list_tensors_impl(db, rest, line_no)
+    } else if rest.starts_with("DATASET VERSIONS ") {
+        handle_list_versions_impl(db, rest, line_no)
     } else {
         Err(DslError::Parse {
             line: line_no,
-            msg: "Expected 'DATASETS' or 'TENSORS' after 'LIST'".to_string(),
+            msg: "Expected 'DATASETS', 'TENSORS', or 'DATASET VERSIONS' after 'LIST'".to_string(),
         })
     }
+}
+
+fn handle_list_versions_impl(
+    db: &mut TensorDb,
+    rest: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
+    // Syntax: DATASET VERSIONS <name>
+    let dataset_name = rest.strip_prefix("DATASET VERSIONS ").unwrap().trim();
+
+    let path = format!(
+        "{}/{}",
+        db.config.storage.data_dir.to_string_lossy(),
+        db.active_instance().name
+    );
+    let storage = ParquetStorage::new(&path);
+
+    if !storage.metadata_exists(dataset_name) {
+        return Ok(DslOutput::Message(format!(
+            "No metadata found for dataset '{}'",
+            dataset_name
+        )));
+    }
+
+    let metadata = storage
+        .load_dataset_metadata(dataset_name)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Failed to load metadata: {}", e),
+        })?;
+
+    let mut output = format!("=== Version History for Dataset: {} ===\n", dataset_name);
+    output.push_str(&format!("Current Version: {}\n", metadata.version));
+    output.push_str(&format!(
+        "Current Schema Version: {}\n",
+        metadata.schema_version
+    ));
+    output.push_str("\nSchema History:\n");
+
+    if metadata.schema_history.is_empty() {
+        output.push_str("  (Initial schema only)\n");
+    } else {
+        for v in &metadata.schema_history {
+            output.push_str(&format!(
+                "  - v{}: {} columns, migration: {:?}\n",
+                v.version,
+                v.schema.columns.len(),
+                v.migration
+            ));
+        }
+    }
+    output.push_str("================================");
+
+    Ok(DslOutput::Message(output))
 }
 
 fn handle_list_datasets_impl(

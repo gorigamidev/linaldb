@@ -72,35 +72,36 @@ Each phase builds on top of the existing codebase and preserves backward compati
 
 ---
 
-## 🟡 Phase 2 — Dataset Persistence & Lifecycle
+## 🟡 Phase 2 — Dataset Persistence & Lifecycle [DONE]
 
 **Goal:** Turn datasets into durable, reusable analytical assets.
 
 ### Dataset Registry
 
-- [ ] Introduce dataset metadata registry
-- [ ] Unique dataset identity (name + version or hash)
-- [ ] Track dataset origin (bind / derive / attach)
-- [ ] Persist metadata separately from data
+- [x] Introduce dataset metadata registry
+- [x] Unique dataset identity (name + version or hash)
+- [x] Track dataset origin (bind / derive / attach)
+- [x] Persist metadata separately from data (`.metadata.json`)
+- [x] Implement Metadata Management DSL (`SET`, `SHOW`, `LIST`)
 
 ### Storage
 
-- [ ] Parquet as first-class storage format
-- [ ] Save dataset snapshots to disk
-- [ ] Reload datasets into new sessions
-- [ ] Support schema evolution (non-breaking only)
+- [x] Parquet as first-class storage format
+- [x] Save dataset snapshots to disk
+- [x] Reload datasets into new sessions
+- [x] Support schema evolution (non-breaking foundation implemented)
 
 ### Lineage
 
-- [ ] Persist transformation lineage
-- [ ] Make lineage queryable
-- [ ] Ensure lineage survives restarts
-- [ ] Validate lineage consistency on reload
+- [x] Persist transformation lineage (integrated into Parquet)
+- [x] Make lineage queryable (SHOW LINEAGE)
+- [x] Ensure lineage survives restarts
+- [x] Validate lineage consistency on reload
 
 ### Retrocompatibility
 
-- [ ] In-memory-only mode still supported
-- [ ] Existing workflows remain valid without persistence
+- [x] In-memory-only mode still supported
+- [x] Existing workflows remain valid without persistence
 
 ---
 

@@ -48,4 +48,11 @@ impl DatasetRegistry {
     pub fn clear(&mut self) {
         self.datasets.clear();
     }
+
+    /// Find a dataset by its metadata hash.
+    pub fn get_by_hash(&self, hash: &str) -> Option<&Dataset> {
+        self.datasets
+            .values()
+            .find(|ds| ds.metadata.as_ref().map_or(false, |m| m.hash == hash))
+    }
 }

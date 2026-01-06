@@ -1,3 +1,4 @@
+use crate::core::storage::ParquetStorage;
 use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
 
@@ -31,15 +32,51 @@ pub fn handle_set_metadata(
         });
     }
 
-    let key = kv[0].trim().to_string();
+    let key = kv[0].trim().to_lowercase();
     let value = kv[1].trim().trim_matches('"').to_string();
 
-    // Update metadata in DB
+    // 1. Update in-memory metadata (legacy)
     db.set_dataset_metadata(dataset_name, key.clone(), value.clone())
         .map_err(|e| DslError::Engine {
             line: line_no,
             source: e,
         })?;
+
+    // 2. Persistent Metadata Update (Phase 2)
+    let path = format!(
+        "{}/{}",
+        db.config.storage.data_dir.to_string_lossy(),
+        db.active_instance().name
+    );
+    let storage = ParquetStorage::new(&path);
+
+    if storage.metadata_exists(dataset_name) {
+        let mut metadata =
+            storage
+                .load_dataset_metadata(dataset_name)
+                .map_err(|e| DslError::Parse {
+                    line: line_no,
+                    msg: format!("Failed to load metadata: {}", e),
+                })?;
+
+        match key.as_str() {
+            "author" => metadata.author = Some(value.clone()),
+            "description" => metadata.description = Some(value.clone()),
+            "tag" => metadata.add_tag(value.clone()),
+            _ => {
+                // For other keys, we might want to store them in a general map
+                // but for now let's stick to the known fields or just ignore
+            }
+        }
+
+        metadata.increment_version();
+        storage
+            .save_dataset_metadata(&metadata)
+            .map_err(|e| DslError::Parse {
+                line: line_no,
+                msg: format!("Failed to save metadata: {}", e),
+            })?;
+    }
 
     Ok(DslOutput::Message(format!(
         "Updated metadata for dataset '{}': {} = {}",

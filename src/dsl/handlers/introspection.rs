@@ -1,3 +1,4 @@
+use crate::core::storage::ParquetStorage;
 use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
 
@@ -106,6 +107,156 @@ pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslO
 
         let mut output = format!("Lineage for tensor '{}':\n", name);
         output.push_str(&format_lineage_tree(&tree, 0));
+        Ok(DslOutput::Message(output))
+    } else if rest.starts_with("DATASET METADATA ") {
+        // SHOW DATASET METADATA dataset_name
+        let dataset_name = rest.trim_start_matches("DATASET METADATA ").trim();
+
+        // 1. Try to get from in-memory first (legacy Dataset type)
+        if let Ok(dataset) = db.get_dataset(dataset_name) {
+            let metadata = &dataset.metadata;
+            let mut output = format!(
+                "=== Dataset Metadata: {} (In-Memory/Legacy) ===\n",
+                dataset_name
+            );
+            output.push_str(&format!("Version: {}\n", metadata.version));
+            output.push_str("Origin: Created\n");
+            output.push_str(&format!("Created: {:?}\n", metadata.created_at));
+            output.push_str(&format!("Updated: {:?}\n", metadata.updated_at));
+            output.push_str(&format!("Rows: {}\n", metadata.row_count));
+
+            if !metadata.extra.is_empty() {
+                output.push_str("\nExtra Metadata:\n");
+                for (k, v) in &metadata.extra {
+                    output.push_str(&format!("  {}: {}\n", k, v));
+                }
+            }
+            output.push_str("================================");
+            return Ok(DslOutput::Message(output));
+        }
+
+        // 2. Try to get from tensor datasets (new system)
+        if let Some(dataset) = db.get_tensor_dataset(dataset_name) {
+            if let Some(metadata) = &dataset.metadata {
+                let mut output = format!(
+                    "=== Dataset Metadata: {} (In-Memory/Tensor) ===\n",
+                    dataset_name
+                );
+                output.push_str(&format!("Version: {}\n", metadata.version));
+                output.push_str(&format!("Hash: {}\n", metadata.hash));
+                output.push_str(&format!("Origin: {:?}\n", metadata.origin));
+                if let Some(author) = &metadata.author {
+                    output.push_str(&format!("Author: {}\n", author));
+                }
+                if let Some(desc) = &metadata.description {
+                    output.push_str(&format!("Description: {}\n", desc));
+                }
+                if !metadata.tags.is_empty() {
+                    output.push_str(&format!("Tags: {}\n", metadata.tags.join(", ")));
+                }
+                output.push_str(&format!("Created: {:?}\n", metadata.created_at));
+                output.push_str(&format!("Updated: {:?}\n", metadata.updated_at));
+                output.push_str("================================");
+                return Ok(DslOutput::Message(output));
+            }
+        }
+
+        // 2. Fallback to Disk
+        // Determine storage path (use default data_dir/db_name)
+        let path = format!(
+            "{}/{}",
+            db.config.storage.data_dir.to_string_lossy(),
+            db.active_instance().name
+        );
+
+        let storage = ParquetStorage::new(&path);
+
+        if !storage.metadata_exists(dataset_name) {
+            return Ok(DslOutput::Message(format!(
+                "No metadata found for dataset '{}'",
+                dataset_name
+            )));
+        }
+
+        let metadata =
+            storage
+                .load_dataset_metadata(dataset_name)
+                .map_err(|e| DslError::Parse {
+                    line: line_no,
+                    msg: format!("Failed to load metadata: {}", e),
+                })?;
+
+        let mut output = format!("=== Dataset Metadata: {} ===\n", metadata.name);
+        output.push_str(&format!("Version: {}\n", metadata.version));
+        output.push_str(&format!("Schema Version: {}\n", metadata.schema_version));
+        output.push_str(&format!("Hash: {}\n", metadata.hash));
+        output.push_str(&format!("Origin: {:?}\n", metadata.origin));
+
+        if let Some(author) = &metadata.author {
+            output.push_str(&format!("Author: {}\n", author));
+        }
+
+        if let Some(desc) = &metadata.description {
+            output.push_str(&format!("Description: {}\n", desc));
+        }
+
+        if !metadata.tags.is_empty() {
+            output.push_str(&format!("Tags: {}\n", metadata.tags.join(", ")));
+        }
+
+        output.push_str(&format!("Created: {:?}\n", metadata.created_at));
+        output.push_str(&format!("Updated: {:?}\n", metadata.updated_at));
+        output.push_str("================================");
+
+        Ok(DslOutput::Message(output))
+    } else if rest.starts_with("DATASET VERSIONS ") {
+        // LIST DATASET VERSIONS dataset_name
+        let dataset_name = rest.trim_start_matches("DATASET VERSIONS ").trim();
+
+        let path = format!(
+            "{}/{}",
+            db.config.storage.data_dir.to_string_lossy(),
+            db.active_instance().name
+        );
+        let storage = ParquetStorage::new(&path);
+
+        if !storage.metadata_exists(dataset_name) {
+            return Ok(DslOutput::Message(format!(
+                "No metadata found for dataset '{}'",
+                dataset_name
+            )));
+        }
+
+        let metadata =
+            storage
+                .load_dataset_metadata(dataset_name)
+                .map_err(|e| DslError::Parse {
+                    line: line_no,
+                    msg: format!("Failed to load metadata: {}", e),
+                })?;
+
+        let mut output = format!("=== Version History for Dataset: {} ===\n", dataset_name);
+        output.push_str(&format!("Current Version: {}\n", metadata.version));
+        output.push_str(&format!(
+            "Current Schema Version: {}\n",
+            metadata.schema_version
+        ));
+        output.push_str("\nSchema History:\n");
+
+        if metadata.schema_history.is_empty() {
+            output.push_str("  (Initial schema only)\n");
+        } else {
+            for v in &metadata.schema_history {
+                output.push_str(&format!(
+                    "  - v{}: {} columns, migration: {:?}\n",
+                    v.version,
+                    v.schema.columns.len(),
+                    v.migration
+                ));
+            }
+        }
+        output.push_str("================================");
+
         Ok(DslOutput::Message(output))
     } else if rest.starts_with("SHAPE ") {
         let name = rest.trim_start_matches("SHAPE ").trim();
