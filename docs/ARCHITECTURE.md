@@ -630,6 +630,28 @@ LINAL optimizes memory layout based on tensor dimensionality:
 
 ---
 
+## Semantic Invariants
+
+To ensure a stable foundation, LINAL guarantees the following semantic behaviors:
+
+1. **Tensor Immutability**: Once a tensor is stored in the `TensorStore`, its data buffer is logically immutable. Transformations (Scale, Add, etc.) always produce new tensor IDs.
+2. **Identity-Preserving Lineage**: Every tensor carrying an `ExecutionId` maintains an unbroken link to its source operation and inputs.
+3. **Reference Integrity**: Tensor-First datasets purely store references. Deleting a tensor from the store will trigger a "Dangling Reference" warning in the dataset, but will not corrupt the dataset schema.
+4. **Deterministic Math**: Given the same floating-point precision and backend (SIMD/Scalar), operations are guaranteed to be bit-deterministic.
+
+## Core vs. Extensions
+
+| Component | Classification | Stability |
+|-----------|----------------|-----------|
+| `Tensor` / `Shape` | **Semantic Core** | Frozen (v1) |
+| `ReferenceGraph` (TF Datasets) | **Semantic Core** | Frozen (v1) |
+| `DslParser` / `Lexer` | **Semantic Core** | Solidified |
+| `SimdBackend` (NEON/AVX) | **Engine Extension** | Evolving |
+| `ParquetPersistence` | **Engine Extension** | Evolving |
+| `HttpServer` / `REST API` | **Application Layer** | Flexible |
+
+---
+
 ## Future Enhancements
 
 - GPU-backed tensor execution

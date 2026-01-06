@@ -1,7 +1,7 @@
 {
   "name": "test_ds",
-  "created_at": "2026-01-02T19:58:06.212117Z",
-  "updated_at": "2026-01-02T19:58:06.212118Z",
+  "created_at": "2026-01-06T01:07:03.581419Z",
+  "updated_at": "2026-01-06T01:07:03.581420Z",
   "version": 1,
   "row_count": 3,
   "column_stats": {
@@ -42,8 +42,8 @@
       }
     ],
     "field_indices": {
-      "vec": 0,
-      "vec_doubled": 1
+      "vec_doubled": 1,
+      "vec": 0
     }
   },
   "extra": {}
