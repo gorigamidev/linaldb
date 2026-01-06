@@ -8,6 +8,12 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TensorId(pub Uuid);
 
+impl Default for TensorId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TensorId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
@@ -17,6 +23,12 @@ impl TensorId {
 /// Unique identifier for an execution/query
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ExecutionId(pub Uuid);
+
+impl Default for ExecutionId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ExecutionId {
     pub fn new() -> Self {
@@ -137,10 +149,7 @@ impl TensorMetadata {
             // Convert f32 slice to byte slice for hashing
             // Safety: f32 has no padding bits and we are just reading bits for hashing
             let bytes: &[u8] = unsafe {
-                std::slice::from_raw_parts(
-                    data.as_ptr() as *const u8,
-                    data.len() * std::mem::size_of::<f32>(),
-                )
+                std::slice::from_raw_parts(data.as_ptr() as *const u8, std::mem::size_of_val(data))
             };
             hasher.update(bytes);
             format!("{:x}", hasher.finalize())

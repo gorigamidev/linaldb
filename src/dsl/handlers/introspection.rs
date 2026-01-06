@@ -85,15 +85,15 @@ pub fn handle_show(db: &TensorDb, line: &str, line_no: usize) -> Result<DslOutpu
         }
         output.push_str("-------------------");
 
-        if count == 0 && dataset_filter.is_some() {
-            // Check if dataset exists to give better error message?
-            if db.get_dataset(dataset_filter.unwrap()).is_err() {
-                return Err(DslError::Engine {
-                    line: line_no,
-                    source: crate::engine::EngineError::NameNotFound(
-                        dataset_filter.unwrap().to_string(),
-                    ),
-                });
+        if count == 0 {
+            if let Some(ds_name) = dataset_filter {
+                // Check if dataset exists to give better error message?
+                if db.get_dataset(ds_name).is_err() {
+                    return Err(DslError::Engine {
+                        line: line_no,
+                        source: crate::engine::EngineError::NameNotFound(ds_name.to_string()),
+                    });
+                }
             }
         }
 
@@ -324,10 +324,10 @@ pub fn handle_show(db: &TensorDb, line: &str, line_no: usize) -> Result<DslOutpu
             return Ok(DslOutput::TensorTable(ds.clone(), health_info));
         }
 
-        return Err(DslError::Engine {
+        Err(DslError::Engine {
             line: line_no,
             source: crate::engine::EngineError::NameNotFound(name.to_string()),
-        });
+        })
     }
 }
 

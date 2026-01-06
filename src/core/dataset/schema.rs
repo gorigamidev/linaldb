@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Semantic role of a column within a dataset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ColumnRole {
     /// Input feature for model or search.
     Feature,
@@ -15,13 +16,8 @@ pub enum ColumnRole {
     /// Unique identifier for each row.
     Guid,
     /// Any other metadata or data.
+    #[default]
     Generic,
-}
-
-impl Default for ColumnRole {
-    fn default() -> Self {
-        Self::Generic
-    }
 }
 
 /// Metadata about a single column in a dataset

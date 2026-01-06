@@ -60,8 +60,7 @@ fn test_vector_search_workflow() {
     SHOW results
     "#;
 
-    linal::dsl::execute_script(&mut db, search_script)
-        .expect("Search script execution failed");
+    linal::dsl::execute_script(&mut db, search_script).expect("Search script execution failed");
 
     let results = db
         .get_dataset("results")

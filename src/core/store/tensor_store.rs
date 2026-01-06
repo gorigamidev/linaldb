@@ -27,6 +27,12 @@ pub struct InMemoryTensorStore {
     tensors: Vec<Tensor>,
 }
 
+impl Default for InMemoryTensorStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryTensorStore {
     pub fn new() -> Self {
         Self {

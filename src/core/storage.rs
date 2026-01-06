@@ -176,14 +176,13 @@ pub fn record_batch_to_rows(
         columns_data.push(values);
     }
 
+    #[allow(clippy::needless_range_loop)]
     for i in 0..num_rows {
         let mut row_values = Vec::with_capacity(schema.fields.len());
         for col_idx in 0..schema.fields.len() {
             row_values.push(columns_data[col_idx][i].clone());
         }
-        tuples.push(
-            Tuple::new(schema.clone(), row_values).map_err(|e| StorageError::Serialization(e))?,
-        );
+        tuples.push(Tuple::new(schema.clone(), row_values).map_err(StorageError::Serialization)?);
     }
 
     Ok(tuples)
@@ -401,7 +400,7 @@ pub fn dataset_to_record_batch(dataset: &Dataset) -> Result<RecordBatch, Storage
         arrays.push(array);
     }
 
-    RecordBatch::try_new(arrow_schema, arrays).map_err(|e| StorageError::Arrow(e))
+    RecordBatch::try_new(arrow_schema, arrays).map_err(StorageError::Arrow)
 }
 
 impl StorageEngine for ParquetStorage {
@@ -610,14 +609,14 @@ impl CsvStorage {
         let format = csv::reader::Format::default().with_header(true);
         let (arrow_schema, _) = format
             .infer_schema(file, Some(100))
-            .map_err(|e| StorageError::Arrow(e))?;
+            .map_err(StorageError::Arrow)?;
 
         let arrow_schema_arc: Arc<ArrowSchema> = Arc::new(arrow_schema.clone());
 
         let builder = csv::ReaderBuilder::new(arrow_schema_arc).with_header(true);
 
         let file = fs::File::open(path)?;
-        let mut csv_reader = builder.build(file)?;
+        let csv_reader = builder.build(file)?;
 
         // Use filename as dataset name
         let name = Path::new(path)
@@ -627,7 +626,7 @@ impl CsvStorage {
             .to_string();
 
         let mut record_batches: Vec<RecordBatch> = Vec::new();
-        while let Some(batch) = csv_reader.next() {
+        for batch in csv_reader {
             record_batches.push(batch?);
         }
 

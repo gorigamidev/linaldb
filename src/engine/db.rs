@@ -295,13 +295,13 @@ impl DatabaseInstance {
         }
 
         let legacy_id = crate::core::dataset_legacy::DatasetId(0);
-        Ok(crate::core::dataset_legacy::Dataset::with_rows(
+        crate::core::dataset_legacy::Dataset::with_rows(
             legacy_id,
             schema,
             rows,
             Some(ds_name.to_string()),
         )
-        .map_err(|e| EngineError::InvalidOp(e))?)
+        .map_err(EngineError::InvalidOp)
     }
 
     /// Resets the database biological state (clear all tensors and datasets)
@@ -319,6 +319,12 @@ pub struct TensorDb {
     pub config: crate::core::config::EngineConfig,
     databases: HashMap<String, DatabaseInstance>,
     active_db: String,
+}
+
+impl Default for TensorDb {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TensorDb {
@@ -836,7 +842,7 @@ impl DatabaseInstance {
             ds_new.id = new_id;
             self.dataset_store
                 .insert(ds_new, Some(alias.to_string()))
-                .map_err(|e| EngineError::DatasetError(e))?;
+                .map_err(EngineError::DatasetError)?;
             return Ok(());
         }
 
@@ -893,7 +899,7 @@ impl DatabaseInstance {
     pub fn find_referencing_datasets(&self, tensor_id: TensorId) -> Vec<String> {
         let mut referencers = Vec::new();
         for (ds_name, ds) in self.tensor_datasets.datasets() {
-            for (_, reference) in &ds.columns {
+            for reference in ds.columns.values() {
                 if let crate::core::dataset::ResourceReference::Tensor { id } = reference {
                     if *id == tensor_id {
                         referencers.push(ds_name.clone());
@@ -1230,9 +1236,7 @@ impl DatabaseInstance {
     /// Insert row into dataset
     pub fn insert_row(&mut self, dataset_name: &str, tuple: Tuple) -> Result<(), EngineError> {
         let dataset = self.get_dataset_mut(dataset_name)?;
-        dataset
-            .add_row(tuple)
-            .map_err(|e| EngineError::InvalidOp(e))
+        dataset.add_row(tuple).map_err(EngineError::InvalidOp)
     }
 
     /// List all dataset names
@@ -1252,7 +1256,7 @@ impl DatabaseInstance {
         let dataset = self.get_dataset_mut(dataset_name)?;
         dataset
             .add_column(column_name, value_type, default_value, nullable)
-            .map_err(|e| EngineError::InvalidOp(e))
+            .map_err(EngineError::InvalidOp)
     }
 
     /// Add a computed column to an existing dataset
@@ -1268,7 +1272,7 @@ impl DatabaseInstance {
         let dataset = self.get_dataset_mut(dataset_name)?;
         dataset
             .add_computed_column(column_name, value_type, computed_values, expression, lazy)
-            .map_err(|e| EngineError::InvalidOp(e))
+            .map_err(EngineError::InvalidOp)
     }
 
     /// Materialize lazy columns in a dataset
@@ -1276,7 +1280,7 @@ impl DatabaseInstance {
         let dataset = self.get_dataset_mut(dataset_name)?;
         dataset
             .materialize_lazy_columns()
-            .map_err(|e| EngineError::InvalidOp(e))
+            .map_err(EngineError::InvalidOp)
     }
 
     /// Index into a tensor: output = tensor[indices]
@@ -1387,7 +1391,7 @@ impl DatabaseInstance {
         };
         let metadata = crate::core::tensor::TensorMetadata::new(new_id, None).with_lineage(lineage);
         let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data, metadata)
-            .map_err(|e| EngineError::InvalidOp(e))?;
+            .map_err(EngineError::InvalidOp)?;
 
         let out_id = self.store.insert_existing_tensor(tensor)?;
         self.names.insert(
@@ -1445,7 +1449,7 @@ impl DatabaseInstance {
         let dataset = self.get_dataset(ds_name)?.clone();
         let column_values = dataset
             .get_column(column_name)
-            .map_err(|e| EngineError::InvalidOp(e))?;
+            .map_err(EngineError::InvalidOp)?;
 
         // Convert column values to tensor
         let new_id = self.store.gen_id();
@@ -1461,7 +1465,7 @@ impl DatabaseInstance {
             })
             .collect();
 
-        let tensor_data = tensor_data.map_err(|e| EngineError::InvalidOp(e))?;
+        let tensor_data = tensor_data.map_err(EngineError::InvalidOp)?;
         let lineage = Lineage {
             execution_id: ctx.execution_id(),
             operation: format!("COLUMN_ACCESS({})", column_name),
@@ -1469,7 +1473,7 @@ impl DatabaseInstance {
         };
         let metadata = crate::core::tensor::TensorMetadata::new(new_id, None).with_lineage(lineage);
         let tensor = crate::core::tensor::Tensor::new(new_id, shape, tensor_data, metadata)
-            .map_err(|e| EngineError::InvalidOp(e))?;
+            .map_err(EngineError::InvalidOp)?;
 
         let out_id = self.store.insert_existing_tensor(tensor)?;
         self.names.insert(
@@ -1492,7 +1496,7 @@ impl DatabaseInstance {
         let index = Box::new(crate::core::index::hash::HashIndex::new());
         dataset
             .create_index(column_name.to_string(), index)
-            .map_err(|e| EngineError::InvalidOp(e))
+            .map_err(EngineError::InvalidOp)
     }
 
     /// Create a vector index on a dataset column
@@ -1505,7 +1509,7 @@ impl DatabaseInstance {
         let index = Box::new(crate::core::index::vector::VectorIndex::new());
         dataset
             .create_index(column_name.to_string(), index)
-            .map_err(|e| EngineError::InvalidOp(e))
+            .map_err(EngineError::InvalidOp)
     }
 
     /// Get all indices info

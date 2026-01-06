@@ -17,7 +17,7 @@ impl SimdBackend {
     #[inline(always)]
     #[allow(dead_code)]
     fn is_aligned(ptr: *const f32, alignment: usize) -> bool {
-        (ptr as usize) % alignment == 0
+        (ptr as usize).is_multiple_of(alignment)
     }
 
     #[inline(always)]
@@ -413,13 +413,7 @@ impl ComputeBackend for SimdBackend {
 
     /// Allocate an output buffer for a tensor.
     fn alloc_output(&self, _ctx: &mut ExecutionContext, len: usize) -> Vec<f32> {
-        // Optimization: explicit uninitialized allocation to avoid zero distribution.
-        // Safety: The buffer is immediately overwritten by SIMD operations.
-        let mut v = Vec::with_capacity(len);
-        unsafe {
-            v.set_len(len);
-        }
-        v
+        vec![0.0; len]
     }
 
     fn add(

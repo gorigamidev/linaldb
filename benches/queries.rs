@@ -2,9 +2,9 @@
 // Using correct DSL syntax from examples
 // Enhanced with batch operations
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use linal::engine::db::TensorDb;
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use linal::dsl::execute_line;
+use linal::engine::db::TensorDb;
 
 fn dataset_creation_benchmark(c: &mut Criterion) {
     c.bench_function("create_dataset", |bench| {
@@ -37,7 +37,7 @@ fn insert_benchmark(c: &mut Criterion) {
 // Batch insert benchmarks at different sizes
 fn batch_insert_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("batch_insert");
-    
+
     for batch_size in [10, 100, 1000].iter() {
         group.bench_with_input(BenchmarkId::from_parameter(batch_size), batch_size, |bench, &batch_size| {
             bench.iter_batched(
@@ -64,11 +64,10 @@ fn batch_insert_benchmark(c: &mut Criterion) {
 
 fn select_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("select");
-    
+
     for row_count in [100, 1000].iter() {
         group.bench_with_input(BenchmarkId::from_parameter(row_count), row_count, |bench, &row_count| {
             let mut db = TensorDb::new();
-            
             // Setup: create dataset with specified rows
             execute_line(&mut db, "DATASET users COLUMNS (id: INT, name: STRING, age: INT, active: BOOL, score: FLOAT)", 1).unwrap();
             for i in 0..row_count {
@@ -78,7 +77,6 @@ fn select_benchmark(c: &mut Criterion) {
                     1
                 ).unwrap();
             }
-            
             bench.iter(|| {
                 execute_line(&mut db, black_box("SELECT * FROM users"), 1).unwrap()
             });

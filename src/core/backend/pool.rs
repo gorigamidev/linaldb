@@ -63,7 +63,7 @@ impl TensorPool {
         }
 
         // Get or create pool for this size
-        let pool = self.pools.entry(capacity).or_insert_with(Vec::new);
+        let pool = self.pools.entry(capacity).or_default();
 
         // Only pool if we haven't hit the limit
         if pool.len() < self.max_per_size {
