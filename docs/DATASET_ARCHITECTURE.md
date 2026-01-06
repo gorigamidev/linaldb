@@ -27,7 +27,7 @@ pub struct Dataset {
 - **Memory**: Copies data for transformations
 - **Status**: **Active** - this is what the engine uses
 
-### 2. `dataset/dataset.rs` - **Future Zero-Copy Design**
+### 2. `dataset/dataset.rs` - **Integrated View Layer**
 
 **Location**: `src/core/dataset/dataset.rs`
 
@@ -46,38 +46,29 @@ pub struct Dataset {
 - **Column-based storage**: References to tensor data
 - **Zero-copy**: Uses `ResourceReference` (views over existing data)
 - **Memory efficient**: No data duplication
-- **Status**: **Experimental** - not yet integrated with engine
+- **Status**: **Integrated Production Layer** - handles `BIND`, `ATTACH`, and `DERIVE`.
 
-## Why Both Exist?
+## Why Both Exist? (Hybrid Architecture)
 
-**Migration Strategy**:
+LINALDB uses a hybrid approach to balance performance and flexibility:
 
-1. `dataset_legacy.rs` is the **current implementation**
-2. `dataset/dataset.rs` is the **target architecture**
-3. Migration is **in progress** but not complete
+1. **Relational/Heavy Path** (`dataset_legacy.rs`):
+    - Optimized for **row-level operations** (INSERT/UPDATE).
+    - Used for standard SQL `DATASET` creation and `SELECT` query results.
+    - Primary format for **Persistence** (Parquet).
+2. **Semantic/Light Path** (`core/dataset/`):
+    - Optimized for **Zero-Copy Views** and **Tensor Algebra**.
+    - Allows linking independent tensors as virtual columns (`ATTACH`).
+    - Tracks complex lineage through the **Reference Graph**.
 
-**Benefits of New Design**:
+## Current Status
 
-- Zero-copy transformations
-- Column-oriented (better for analytics)
-- Integrates with tensor system
-- More memory efficient
+**Active Hybrid Model**:
 
-**Challenges**:
+- both systems are active and integrated.
+- **Engine Bridge**: Use `materialize_tensor_dataset()` to convert a Reference View into a Relational Object for high-speed row scanning or Parquet export.
 
-- Requires DSL changes
-- Engine integration work
-- Backward compatibility
+**Future Work**:
 
-## Recommendation
-
-**Keep both for now**:
-
-- `dataset_legacy.rs`: Production use
-- `dataset/dataset.rs`: Future development
-
-**Future Work** (Phase 12+):
-
-- Complete migration to zero-copy dataset
-- Deprecate dataset_legacy
-- Update DSL to use new design
+- Merge the two into a unified `VirtualTable` that can switch between Column-Referencing and Row-Owning modes transparently.
+- Standardize all DSL commands to target the unified interface.
