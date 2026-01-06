@@ -34,22 +34,26 @@ We are committed to providing a welcoming and inclusive environment. Please be r
 1. **Fork the repository** on GitHub
 
 2. **Clone your fork**:
+
    ```bash
    git clone https://github.com/yourusername/linal.git
    cd linal
    ```
 
 3. **Add upstream remote**:
+
    ```bash
    git remote add upstream https://github.com/gorigami/linal.git
    ```
 
 4. **Build the project**:
+
    ```bash
    cargo build
    ```
 
 5. **Run tests**:
+
    ```bash
    cargo test
    ```
@@ -67,6 +71,7 @@ git checkout -b feature/your-feature-name
 ```
 
 Branch naming conventions:
+
 - `feature/` - New features
 - `fix/` - Bug fixes
 - `docs/` - Documentation updates
@@ -102,11 +107,13 @@ git commit -m "Add feature: description of what you did"
 ```
 
 Commit message format:
+
 - Use imperative mood ("Add feature" not "Added feature")
 - First line should be < 50 characters
 - Add detailed description if needed (separated by blank line)
 
 Example:
+
 ```
 Add vector similarity search optimization
 
@@ -140,10 +147,13 @@ Then create a Pull Request on GitHub.
 
 - Follow [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
 - Use `rustfmt` for formatting:
+
   ```bash
   cargo fmt
   ```
+
 - Use `clippy` for linting:
+
   ```bash
   cargo clippy -- -D warnings
   ```
@@ -170,6 +180,7 @@ Then create a Pull Request on GitHub.
 - Update README/docs for user-facing changes
 
 Example:
+
 ```rust
 /// Computes the dot product of two vectors.
 ///
@@ -368,9 +379,8 @@ linal/
 
 ## License
 
-By contributing to LINAL, you agree that your contributions will be licensed under the MIT License.
+By contributing to LINALDB, you agree that your contributions will be licensed under the **LinalDB Community License v1.0**.
 
 ---
 
-Thank you for contributing to LINAL! 🚀
-
+Thank you for contributing to LINALDB! 🚀

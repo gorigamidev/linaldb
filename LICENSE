@@ -1,22 +1,78 @@
-MIT License
+# LinalDB Community License v1.0
 
-Copyright (c) 2024 gorigami (gorigami.xyz)
+Copyright (c) 2025 gorigami
+https://gorigami.xyz
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This software was created in December 2025.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+---
+
+## 1. Grant of Rights
+
+Subject to the terms and limitations of this license, permission is hereby
+granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to use, copy, modify, and
+distribute the Software.
+
+Permitted uses include, but are not limited to:
+- Personal use
+- Educational use
+- Research and experimentation
+- Internal use within an organization
+- Evaluation and prototyping
+- Modification and contribution to the codebase
+
+---
+
+## 2. Limitations
+
+The Software may NOT be used for Commercial Purposes without an explicit
+Commercial License granted by the Licensor.
+
+"Commercial Purposes" include, but are not limited to:
+- Selling the Software or any derivative work
+- Offering the Software as part of a paid product or service
+- Providing the Software as a hosted, managed, or cloud-based service (SaaS, PaaS, DBaaS)
+- Redistributing the Software as part of a commercial offering
+- Monetizing the Software directly or indirectly
+
+Internal use of the Software within a commercial organization, without
+redistribution or external offering, is permitted.
+
+---
+
+## 3. Commercial License
+
+Any use of the Software for Commercial Purposes requires a separate
+Commercial License.
+
+For commercial licensing inquiries, please contact:
+develop@gorigami.xyz
+
+---
+
+## 4. Contributions
+
+Unless otherwise explicitly stated, any contribution intentionally submitted
+to the project shall be licensed under the terms of this license.
+
+---
+
+## 5. No Change of License (At This Time)
+
+This license does not currently include an automatic change or conversion to
+another license. The Licensor reserves the right to modify licensing terms
+for future versions of the Software.
+
+---
+
+## 6. Disclaimer of Warranty
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.

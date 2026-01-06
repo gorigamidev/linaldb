@@ -1,207 +1,151 @@
 # LINAL DSL Reference
 
-**LINAL Script** is a SQL-inspired language designed for working with tensors, vectors, matrices, and structured datasets. It bridges the gap between traditional data querying and numerical computation.
+**LINAL Script** is a high-performance, SQL-inspired language for tensor algebra and relational analytics. This document serves as the complete technical specification for all keywords, operators, and built-in functions.
 
 ---
 
-## 1. Core Principles
+## 1. Data Types & Literals
 
-1. **SQL Familiarity**: Standard SELECT/WHERE/JOIN syntax for data operations.
-2. **First-Class Algebra**: Vectors and matrices are treated as primitive types with native operators.
-3. **Zero-Copy Semantics**: Operations on large datasets favor references and metadata views over data duplication.
-4. **Lineage Tracking**: Automatic tracking of computational history for all derived tensors.
+LINAL supports both standard relational types and multi-dimensional numeric structures.
 
----
+### Relational Types
 
-## 2. Resource Management
+- `Int`: 64-bit signed integer.
+- `Float`: 32-bit floating point (standard for tensor values).
+- `String`: UTF-8 character sequence.
+- `Bool`: `true` or `false`.
+- `Null`: Represents a missing value. Use the `?` suffix in `DATASET` definitions for nullable columns (e.g., `score: Float?`).
 
-### BIND
+### Tensor Types
 
-Create a local alias for an existing tensor or dataset.
+Defined with specific dimensionality:
 
-```sql
-BIND scores_alias TO original_scores
-```
-
-### ATTACH
-
-Link an independent tensor into a dataset column (Zero-copy).
-
-```sql
-ATTACH vector_weights TO neural_ds.weights
-```
-
-### DERIVE
-
-Create a new tensor from an expression while preserving full provenance.
-
-```sql
-DERIVE normalized_v FROM v / 10.0
-```
-
-### RESET
-
-Clear the current session (all in-memory tensors and datasets).
-
-```sql
-RESET SESSION
-```
+- `Vector(N)`: A 1D tensor with `N` elements.
+- `Matrix(R, C)`: A 2D tensor with `R` rows and `C` columns.
+- `Tensor(d1, d2, ...)`: An N-dimensional tensor.
 
 ---
 
-## 3. Tensor & Matrix Operations
+## 2. Resource Definition
 
-### DEFINE / VECTOR / MATRIX
+Create and initialize numeric resources and structured schemas.
 
-Create new numeric resources.
+### VECTOR / MATRIX
+
+Quick shorthand for defining tensors.
 
 ```sql
 VECTOR v = [1.0, 2.0, 3.0]
 MATRIX m = [[1, 2], [3, 4]]
-DEFINE t = TENSOR(2, 2, 2) [1, 2, 3, 4, 5, 6, 7, 8]
 ```
 
-### LET
+### DEFINE
 
-Perform algebraic operations.
+Explicit tensor definition for higher dimensions.
 
 ```sql
-LET res = v * 2.5
-LET combined = m + matrix_b
+DEFINE t AS TENSOR(2, 2, 2) VALUES [1, 2, 3, 4, 5, 6, 7, 8]
 ```
-
-### Algebra Handlers
-
-- `MATMUL`: Matrix multiplication
-- `TRANSPOSE`: Swap dimensions
-- `RESHAPE`: Change shape without copying
-- `FLATTEN`: Convert to 1D vector
-- `STACK`: Combine tensors along axis
-
----
-
-## 4. Dataset Operations
 
 ### DATASET
 
-Define a new dataset schema.
+Define a persistent relational structure.
 
 ```sql
-DATASET analytics COLUMNS (
+DATASET diagnostics COLUMNS (
     id: Int,
     region: String,
-    embedding: Vector(128)
+    score: Float?,           -- Nullable column
+    features: Vector(128)    -- Embedded tensor
 )
 ```
 
-### INSERT INTO
+---
 
-Add data to a dataset.
+## 3. Numerical DSL (Core Algebra)
 
-```sql
-INSERT INTO analytics (id, region, embedding) VALUES (1, "North", [0.1, ...])
-```
+LINAL provides two ways to perform math: Functional keywords and Infix operators.
 
-### SELECT (Querying)
+### Functional Keywords
 
-Standard SQL querying with support for tensor columns.
+- `ADD a b`: Element-wise addition.
+- `SUBTRACT a b`: Element-wise subtraction.
+- `MULTIPLY a b`: Element-wise multiplication (Hadamard product).
+- `DIVIDE a b`: Element-wise division.
+- `MATMUL a b`: Standard matrix multiplication.
+- `TRANSPOSE a`: Swap dimensions of a matrix/tensor.
+- `RESHAPE a TO [dims]`: Change shape without copying data.
+- `FLATTEN a`: Convert multidimensional tensor to a 1D vector.
+- `NORMALIZE a`: Scales vector to unit length (L2 norm).
+- `SCALE a BY n`: Multiplies all elements by a scalar `n`.
+- `STACK t1 t2 ...`: Combines tensors along Axis 0.
 
-```sql
-SELECT region, SUM(embedding) 
-FROM analytics 
-WHERE region = "North" 
-GROUP BY region
-```
+### Infix Operators
 
-### ALTER DATASET
-
-Add columns dynamically.
-
-```sql
-ALTER DATASET analytics ADD COLUMN total = price * quantity
-ALTER DATASET analytics ADD COLUMN score = complex_expr LAZY
-```
-
-### MATERIALIZE
-
-Convert a LAZY column into a physical, materialized column.
+Standard math notation for scalar and tensor variables:
 
 ```sql
-MATERIALIZE analytics
+LET result = (v_a + v_b) / 2.0
+LET scaled = m_a * 10
 ```
+
+### Advanced Operators
+
+- `CORRELATE a WITH b`: Pearson correlation between two vectors.
+- `SIMILARITY a WITH b`: Cosine similarity score [-1.0, 1.0].
+- `DISTANCE a TO b`: Euclidean distance between points.
 
 ---
 
-## 5. Introspection & Diagnostics
+## 4. Query & Engineering (SQL)
 
-### SHOW
+### SELECT
 
-Inspect any engine resource.
-
-```sql
-SHOW v
-SHOW SCHEMA analytics
-SHOW LINEAGE result
-SHOW ALL DATASETS
-### SHOW DATASET METADATA
-
-Inspect a dataset's current metadata (including version, origin, timestamps, and custom tags).
+Query datasets with familiar syntax.
 
 ```sql
-SHOW DATASET METADATA analytics
+SELECT region, AVG(score) 
+FROM diagnostics 
+WHERE id > 100 
+GROUP BY region 
+HAVING AVG(score) > 0.5 
+LIMIT 10
 ```
 
-### LIST DATASET VERSIONS
+- **Aggregate Functions**: `SUM`, `AVG`, `COUNT`, `MIN`, `MAX`.
+- **Filtering**: `WHERE` or `FILTER` can be used interchangeably.
 
-Show the history of schema and metadata changes for a specific dataset.
+### Semantic Transforms (Zero-Copy)
 
-```sql
-LIST DATASET VERSIONS analytics
-```
+- `BIND alias TO resource`: Create a semantic link (alias) to a tensor or dataset.
+- `ATTACH tensor TO ds.col`: Link an independent tensor into a dataset column.
+- `DERIVE target FROM expr`: Create a new resource with full automated lineage tracking.
 
-### SET DATASET METADATA
+### Schema Evolution
 
-Update specific metadata fields for a dataset. Supported fields: `author`, `description`, `tag` (can be called multiple times to add multiple tags).
-
-```sql
-SET DATASET analytics METADATA author = "Nicolas"
-SET DATASET analytics METADATA description = "Analysis of Q1 results"
-SET DATASET analytics METADATA tag = "production"
-SET DATASET analytics METADATA tag = "v1-stable"
-```
-
-### AUDIT
-
-Verify the health and referential integrity of a dataset.
-
-```sql
-AUDIT DATASET diagnostics
-```
-
-### EXPLAIN
-
-Visualize the execution plan for a query.
-
-```sql
-EXPLAIN SELECT * FROM users WHERE id > 10
-```
+- `ALTER DATASET ds ADD COLUMN col: type [DEFAULT val]`
+- `ALTER DATASET ds ADD COLUMN col = expression [LAZY]`
+- `MATERIALIZE ds`: Physicalize all `LAZY` columns in a dataset.
 
 ---
 
-## 6. Persistence
+## 5. Persistence & Ingestion
 
-- `SAVE DATASET <name> [TO "path"]`: Persist dataset and its metadata to Parquet/JSON. If path is omitted, use the managed database directory.
-- `SAVE TENSOR <name> [TO "path"]`: Persist tensor data to JSON.
-- `LOAD DATASET <target> [FROM "source_path"]`: Recover a dataset. If `FROM` is specified, the dataset is loaded from the source path (which can be a filename or directory) and registered in-memory as `<target>`.
-- `LIST DATASETS`: Show all persisted datasets in the current database context.
-- `IMPORT CSV FROM "path" AS <name>`: Import CSV with automatic schema inference.
-- `EXPORT CSV <name> TO "path"`: Export dataset to CSV format.
+Load and save data across different formats.
+
+- `IMPORT CSV FROM "path" AS name`: Auto-infer schema and load CSV.
+- `EXPORT CSV name TO "path"`: Save dataset to CSV.
+- `SAVE DATASET name [TO "path"]`: Persist to Parquet (includes metadata/lineage).
+- `LOAD DATASET name [FROM "path"]`: Restore a persisted dataset.
+- `LIST DATASETS`: Show available datasets in the current database context.
 
 ---
 
-## 7. Instance Management
+## 6. Instance & Session Management
 
-Manage multiple isolated database instances.
+### Database Management
+
+LINAL supports multi-platform isolated instances.
 
 ```sql
 CREATE DATABASE research
@@ -210,37 +154,32 @@ DROP DATABASE obsolete_db
 SHOW DATABASES
 ```
 
+### RESET SESSION
+
+Clears all in-memory registers (Tensors and Datasets) for the current session.
+
+---
+
+## 7. Diagnostics
+
+- `SHOW <name>`: Display contents/schema of any resource.
+- `SHOW LINEAGE <name>`: Display the graph of computations that produced the resource.
+- `SHOW SCHEMA <dataset>`: Display column names and types.
+- `EXPLAIN <query>`: Show the logical execution plan.
+- `AUDIT DATASET <name>`: Perform a health check on referential integrity.
+
 ---
 
 ## 8. Server & Job Management
 
-LINAL supports asynchronous background execution and high-concurrency server modes.
+For remote execution and production workloads.
 
-### Background Jobs
-
-Manage long-running DSL commands as isolated background tasks.
-
-- **Submit**: `POST /jobs` (REST API) executes a DSL command in the background.
-- **Cancel**: `DELETE /jobs/:id` cancels a pending job.
-
-### Server Commands (CLI)
-
-Control the LINAL server instance directly from the command line.
-
-```bash
-# Check if server is running and healthy
-linal server status
-
-# Start server on specific port
-linal server start --port 8080
-```
-
-### High-Concurrency Features
-
-- **Parallel Reads**: Analytical commands (`SHOW`, `SELECT`, `EXPLAIN`, `AUDIT`) run in parallel using shared locks.
-- **Thread Safety**: State-modifying operations automatically acquire exclusive write locks to ensure consistency.
-- **Graceful Shutdown**: The server safely finishes active requests before exiting on SIGINT/SIGTERM.
+- **Background Jobs**: Submit commands via `POST /jobs` to get a `job_id`.
+- **Status Polling**: `GET /jobs/:id` returns `Pending`, `Running`, or `Completed`.
+- **Graceful Shutdown**: Server handles `SIGINT`/`SIGTERM` to safely close connections.
 
 ---
 
-**LINAL**: *Where SQL meets Linear Algebra.*
+**LINALDB**: *Where SQL meets Linear Algebra.*
+Copyright (c) 2025 gorigami (gorigami.xyz)
+Licensed under the LinalDB Community License v1.0

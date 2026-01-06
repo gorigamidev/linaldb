@@ -1,562 +1,107 @@
-# ⚡ LINAL (v0.1.9)
+# ⚡ LINALDB: The Tensor-First Analytical Engine
 
-**LINAL** is an experimental, in-memory analytical engine built for scientific computing, machine learning, and structured data analysis. It bridges the gap between Relational Databases and Tensor Computation, providing a SQL-like DSL that treats Vectors and Matrices as first-class citizens.
+**LINALDB** is a high-performance, in-memory analytical engine built to bridge the gap between relational data engineering and scientific computing. It provides a SQL-inspired DSL that treats vectors, matrices, and multi-dimensional tensors as first-class citizens.
 
 ---
 
-## Key Capabilities
+## One Mental Model: SQL meets Linear Algebra
 
-### 1. Hybrid Data Model
+LINALDB is designed for developers and researchers who need the structure of a database with the mathematical power of a tensor library.
 
-Store structured data (Integers, Strings) alongside mathematical types (Vectors, Matrices) in the same dataset.
+- **Semantic Transformations**: Build zero-copy views using Reference Graphs.
+- **Algebraic DSL**: Perform complex matrix and vector math directly in your queries.
+- **Local-First & Portable**: Use it as an embedded library (like SQLite) or a managed server.
+- **Enterprise Ready**: High-concurrency reads (`RwLock`), asynchronous background jobs, and multi-tenant isolation.
 
-```rust
-DATASET analytics COLUMNS (
+---
+
+## 30-Second Quick Start
+
+Get LINALDB running on your machine:
+
+```bash
+# Clone and build
+git clone https://github.com/gorigami/linaldb.git
+cd linaldb && cargo build --release
+
+# 1. Start the interactive REPL
+./target/release/linaldb repl
+
+# 2. Run a smoke test script
+./target/release/linaldb run examples/end_to_end.lnl
+
+# 3. Start the managed server
+./target/release/linaldb serve --port 8080
+```
+
+---
+
+## Core Capabilities
+
+### 1. Unified Hybrid Data Model
+
+Store structured fields alongside high-dimensional tensors in the same dataset.
+
+```sql
+DATASET diagnostics COLUMNS (
     id: Int,
     region: String,
-    features: Matrix(4, 4),  // 4x4 Matrix
-    embedding: Vector(128)   // 128-dim Vector
+    features: Matrix(4, 4),  -- Native Matrix support
+    embedding: Vector(128)   -- Native Vector support
 )
 ```
 
-### 2. Dataset as Reference Graph (New!)
+### 2. Zero-Copy Reference Graphs
 
-Datasets in LINAL are now formal **Reference Graphs**. They serve as semantic views over existing data, referencing actual tensors or other dataset columns without duplication. This enables powerful features like virtual datasets and shared data structures.
-
-```sql
--- Create tensors
-VECTOR prices = [10.0, 20.0, 30.0]
-VECTOR qtys   = [5.0, 10.0, 2.0]
-
--- Create a zero-copy dataset view
--- This stores ResourceReferences, not the data itself.
-LET ds = dataset("sales_view")
-ds.add_column("price", prices)
-ds.add_column("quantity", qtys)
-
--- Derived Views: Datasets can point to other datasets
--- ds2.total -> ds1.price * ds1.quantity (Zero-copy chain)
-LET revenue = ds.price * ds.quantity
-ds.add_column("total", revenue)
-
--- Materialize & Save to Parquet
--- Regular SAVE materializes into Parquet for portability.
-SAVE DATASET sales_view TO "sales.parquet"
-```
-
-### 3. Analytical DSL
-
-Perform complex selection, filtering, and aggregation on all data types.
+Create semantic views without duplicating data. LINALDB tracks lineage and provenance automatically.
 
 ```sql
--- Select specific columns including matrix data
-SELECT region, features FROM analytics LIMIT 5
+-- Create a zero-copy alias
+BIND scores_alias TO original_scores
 
--- Filter using standard predicates
-SELECT * FROM analytics WHERE region = "North"
+-- Attach independent tensors to a dataset
+ATTACH weights_vec TO model_ds.weights
 
--- Add computed columns dynamically
-DATASET analytics ADD COLUMN total = price * quantity
-DATASET analytics ADD COLUMN discount_price = price - discount
-
--- Schema introspection
-SHOW SCHEMA analytics
+-- Derive new resources with full lineage
+DERIVE normalized FROM v / 10.0
 ```
 
-### 3. Matrix & Vector Aggregations
+### 3. High-Concurrency Analytics
 
-LINAL supports element-wise aggregations on complex types with full SQL-like aggregation functions.
-
-```sql
--- Element-wise Summation of Matrices by Region
-SELECT region, SUM(features) 
-FROM analytics 
-GROUP BY region
-
--- Average (AVG) aggregation with proper sum/count tracking
-SELECT region, AVG(score) 
-FROM analytics 
-GROUP BY region
-
--- Aggregation on Computed Expressions
--- Scales the matrix by 2 before summing
-SELECT region, SUM(features * 2.0) 
-FROM analytics 
-GROUP BY region
-
--- Full aggregation suite: SUM, AVG, COUNT, MIN, MAX
-SELECT region, 
-       SUM(amount) as total,
-       AVG(amount) as average,
-       COUNT(*) as count,
-       MIN(amount) as minimum,
-       MAX(amount) as maximum
-FROM analytics 
-GROUP BY region
-```
-
-### 4. Vector Similarity Search
-
-Built-in support for vector indexing and similarity search (KNN).
-
-```sql
--- Create a Vector Index
-CREATE VECTOR INDEX emb_idx ON analytics(embedding)
-
--- Find top 5 similar vectors
-SEARCH analytics 
-WHERE embedding ~= [0.1, 0.2, ... 128 values ...] 
-LIMIT 5
-```
-
-### 5. Local First & Embedded Mode
-
-LINAL (v0.1.9) is now optimized for local development and embedded analytical workflows.
-
-- **CSV I/O**: High-performance CSV import/export with automatic schema inference.
-- **Session Management**: Isolated execution contexts with explicit `RESET SESSION` support.
-- **Inline Execution**: Execute single commands directly via `linal exec "..."`.
-
-```sql
--- Fast local data ingestion
-IMPORT CSV FROM "./data/raw_data.csv" AS my_dataset
-
--- Clean session without restart
-RESET SESSION
-
--- Direct CLI execution
--- linal exec "SELECT * FROM my_dataset"
-```
-
-### 6. Multi-Database Engine
-
-Manage multiple isolated database instances within a single cluster.
-
-```sql
--- Create and switch context
-CREATE DATABASE analytics
-USE analytics
-
--- List all databases
-SHOW DATABASES
-
--- Data isolation: users in 'default' != users in 'analytics'
-USE default
-SHOW ALL DATASETS
-```
-
-### 6. Persistent Metadata & Dataset Lifecycle (New!)
-
-Add custom, searchable metadata, versioning, and full schema evolution history to your datasets.
-
-```sql
--- Set custom metadata
-SET DATASET users METADATA author = "Nicolas"
-SET DATASET users METADATA description = "Analysis of Q1 results"
-SET DATASET users METADATA tag = "production"
-
--- Inspect metadata & version history (now supports both legacy and persistent formats)
-SHOW DATASET METADATA users
-LIST DATASET VERSIONS users
-```
-
-Metadata is automatically persisted to `.metadata.json` files alongside your Parquet data, ensuring that version increments, schema history, and custom tags survive system restarts. Legacy metadata (if present) is maintained in `.meta.json` for backward compatibility.
-
-### 7. Explicit Semantics & Lineage (New!)
-
-LINAL now supports declarative resource management and built-in execution lineage.
-
-- **BIND**: Create zero-copy aliases for tensors or datasets.
-
-    ```sql
-    BIND scores_alias TO original_scores
-    ```
-
-- **ATTACH**: Declaratively link independent tensors into dataset columns.
-
-    ```sql
-    ATTACH vector_weights TO neural_ds.weights
-    ```
-
-- **DERIVE**: Explicitly compute new tensors while preserving full provenance (Lineage).
-
-    ```sql
-    DERIVE normalized_v FROM v / 10.0
-    ```
-
-#### Execution Lineage
-
-Every tensor created via `DERIVE` or `LET` automatically tracks its origin, operation, and input IDs. This metadata is persistent and can be inspected to audit analytical workflows.
-
-### 8. Introspection & Data Health
-
-LINAL provides advanced tools to audit your analytical pipelines and trace data provenance.
-
-- **SHOW LINEAGE**: Visualize the full recursive "ancestry" of any tensor.
-- **AUDIT DATASET**: Deep validation of zero-copy Reference Graphs to ensure all data dependencies are healthy.
-- **Engine Warnings**: Automatic detection of dangling references in datasets.
-
-```sql
--- Trace where 'result' came from
-SHOW LINEAGE result
-
--- Audit dataset health
-AUDIT DATASET diagnostics
-```
-
-### 9. Managed Service & Hardening
-
-LINAL has evolved from a local-only tool into a **Managed Analytical Service**.
-
-- **Multitenancy**: Shared infrastructure with per-request database context isolation via `X-Linal-Database` header.
-- **Asynchronous Jobs**: Submit long-running queries to the background and poll for results via the `/jobs` API.
-- **High-Concurrency**: Optimized `RwLock` architecture allows multiple parallel analytical queries without blocking.
-- **Background Scheduler**: Automate your analytical pipelines with periodic execution of DSL commands.
-
----
-
-## Multi-Paradigm Access
-
-LINAL provides a unified interface across all access methods.
-
-### 1. Interactive REPL (Shell)
-
-Designed for live data exploration. Supports command history and flexible output formatting.
+Multi-platform server with parallel execution and background workload management.
 
 ```bash
-# Start the interactive shell
-cargo run -- repl
-
-# Use machine-readable TOON output
-cargo run -- repl --format=toon
-```
-
-### 2. Script Execution (Automation)
-
-The `run` command executes `.lnl` script files. Scripts support **multi-line commands** (e.g., complex `DATASET` definitions) using balanced parentheses logic.
-
-```bash
-# Run a script file
-cargo run -- run examples/smoke_test.lnl
-
-# Scripts handle multi-line definitions gracefully:
-# DATASET users COLUMNS (
-#    id: INT,
-#    embedding: VECTOR(128)
-# )
-```
-
-### 3. HTTP Server
-
-```bash
-# Start server on port 8080
-cargo run -- server --port 8080
-```
-
-**Server API** - Unified interface with DSL commands and flexible output:
-
-*Input:* Raw DSL commands (text/plain)
-
-```bash
-# TOON response (default)
-curl -X POST "http://localhost:8080/execute" \
-  -H "Content-Type: text/plain" \
-  -H "X-Linal-Database: production" \
-  -d "VECTOR v = [1, 2, 3]"
-
-# JSON response (opt-in)
-curl -X POST "http://localhost:8080/execute?format=json" \
-  -H "Content-Type: text/plain" \
-  -d "SHOW v"
-
-# Database Management
-curl -X POST "http://localhost:8080/databases/new_db"
-curl -X GET "http://localhost:8080/databases"
-
-# Query Scheduling
-curl -X POST "http://localhost:8080/schedule" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "auto_save", "command": "SAVE ALL", "interval_secs": 60}'
-```
-
-*Response Formats:*
-
-- **TOON** (default): Token-Oriented Object Notation - human and machine readable
-- **JSON** (opt-in): Standard JSON format via `?format=json` query parameter
-
----
-
-## Recent Features
-
-### High-Concurrency & Asynchronous Jobs (v0.1.9)
-
-Phase 3 introduces enterprise-grade execution capabilities:
-
-- **Parallel Analytical Reads**: Multiple users can now query the same database instance simultaneously using shared `RwLock` access.
-- **Background Job Manager**: Asynchronous execution for heavy workloads. Submit via `POST /jobs` and retrieve results later.
-- **Graceful Shutdown**: Server handles termination signals safely, allowing in-flight requests to complete.
-- **Improved CLI**: `linal server status` and nested server management commands.
-
-### Introspection & Consistency (v0.1.8)
-
-LINAL is now a fully introspectable engine with formal diagnostic tools:
-
-- **`SHOW LINEAGE`**: Recursive ancestry reporting for derived tensors.
-- **`AUDIT DATASET`**: Formal integrity verification for Reference Graphs.
-- **Improved Diagnostics**: Enhanced `SHOW` output for tensors, including creation timestamps and source operations.
-- **Reference Persistence**: Full serialization of execution provenance (Phase 5 of formalization roadmap).
-
-### CLI & Server Hardening (v0.1.4 - LINAL)
-
-Significant improvements to the user experience and engine robustness:
-
-**Professional REPL (LINAL Shell):**
-
-- Integrated `rustyline` for persistent command history and multi-line support.
-- Balanced parentheses logic for entering complex datasets directly in the REPL.
-- `colored` output for improved readability and error reporting.
-
-**Administrative CLI Commands:**
-
-- `linal init`: Automated setup for `./data` and `linal.toml`.
-- `linal load <file> <dataset>`: Direct Parquet ingestion via CLI.
-- `linal serve`: Shorthand for starting the HTTP server.
-
-**Server Robustness & API Docs:**
-
-- **Query Timeouts**: Long-running queries automatically cancel after 30s.
-- **Request Validation**: Size limits and non-empty checks for all incoming commands.
-- **OpenAPI / Swagger UI**: Built-in interactive documentation available at `/swagger-ui`.
-
----
-
-### Interface Standardization (v0.1.2)
-
-Unified interface across all access methods with flexible output formats:
-
-**Server API Improvements:**
-
-- Raw DSL commands as input (no JSON wrapper needed)
-- TOON format as default output
-- JSON format available via `?format=json` query parameter
-- Backward compatible with legacy JSON request format
-
-**CLI Enhancements:**
-
-- `--format` flag for REPL and script execution
-- Choose between `display` (human-readable) or `toon` (machine-readable) output
-- Perfect for automation and scripting workflows
-
-**Example:**
-
-```bash
-# CLI with TOON output
-cargo run -- repl --format=toon
-
-# Server with JSON response
-curl -X POST "http://localhost:8080/execute?format=json" \
-  -H "Content-Type: text/plain" \
-  -d "SELECT * FROM users LIMIT 5"
-```
-
-### AVG Aggregation (v0.1.2)
-
-Full implementation of AVG aggregation with proper sum/count tracking:
-
-- Supports Int, Float, Vector, and Matrix types
-- Automatic type conversion (Int → Float for precision)
-- Works with GROUP BY and computed expressions
-
-### Computed Columns (v0.1.2)
-
-Add computed columns dynamically using expressions with support for both materialized and lazy evaluation:
-
-**Materialized Columns** (evaluated immediately):
-
-```sql
--- Add computed column with expression
-DATASET products ADD COLUMN total = price * quantity
-DATASET sales ADD COLUMN profit = revenue - cost
-```
-
-**Lazy Columns** (evaluated on access):
-
-```sql
--- Lazy columns store the expression and evaluate only when accessed
-DATASET analytics ADD COLUMN total = price * quantity LAZY
-DATASET analytics ADD COLUMN complex_calc = (a + b) * c LAZY
-
--- Query results automatically evaluate lazy columns
-SELECT total, complex_calc FROM analytics
-
--- Materialize lazy columns to convert them to regular columns
-MATERIALIZE analytics
-```
-
-### Lazy Column Evaluation (v0.1.2)
-
-Lazy columns provide on-demand computation, storing expressions instead of pre-computed values:
-
-- **Storage Efficiency**: Only store expressions, not computed values
-- **On-Demand Evaluation**: Values computed when accessed in queries
-- **Materialization**: Convert lazy columns to materialized with `MATERIALIZE` command
-- **Automatic Evaluation**: Query execution automatically evaluates lazy columns
-
-### Schema Introspection
-
-```sql
--- View dataset schema
-SHOW SCHEMA analytics
-
--- List all datasets
-SHOW ALL DATASETS
-
--- View all indexes
-SHOW INDEXES analytics
-```
-
-### Persistence & Lifecycle (v0.1.3)
-
-Native disk-backed persistence with automated database discovery and configuration.
-
-**Database Management:**
-
-```sql
-CREATE DATABASE research
-USE research
-DROP DATABASE obsolete_db
-SHOW DATABASES
-```
-
-**Dataset & Tensor Persistence:**
-
-```sql
--- Save data (defaults to database-specific path in linal.toml)
-SAVE DATASET users
-SAVE TENSOR weights
-
--- Load data back
-LOAD DATASET users
-LOAD TENSOR weights
-
--- List what's on disk
-LIST DATASETS
-LIST TENSORS
-```
-
-**Configuration (`linal.toml`):**
-Customize the engine behavior and storage locations.
-
-```toml
-[storage]
-data_dir = "./data"
-default_db = "default"
-```
-
-**Key Features:**
-
-- **Auto-Discovery**: Engine automatically discovers and recovers databases from `data_dir` on startup.
-- **Database Isolation**: Persistence is siloed per database (e.g., `./data/analytics/` vs `./data/default/`).
-- **Standard Formats**: Datasets use **Apache Parquet** for efficiency; Tensors use JSON for weights and metadata.
-- **Seamless Recovery**: Databases created in one session are immediately available in the next.
-
----
-
-## Quick Start
-
-### Installation
-
-```bash
-git clone https://github.com/yourusername/linal.git
-cd linal
-cargo build --release
-```
-
-### Running Examples
-
-We have several example scripts demonstrating LINAL's capabilities:
-
-```bash
-# Comprehensive feature demo
-cargo run -- run examples/features_demo.lnl
-
-# End-to-end workflow example
-cargo run -- run examples/end_to_end.lnl
-
-# Performance benchmark
-cargo run -- run examples/benchmark.lnl
-
-# Introspection & Auditing demo
-cargo run -- run examples/introspection_demo.lnl
-```
-
-### Interactive REPL
-
-```bash
-$ cargo run
-> DEFINE v = [1, 2, 3]
-> SHOW v + 1
-[2, 3, 4]
+# Check server health
+linaldb server status
+
+# Submit a long-running job to the background
+curl -X POST "http://localhost:8080/jobs" -d "SHOW ALL"
 ```
 
 ---
 
-## Architecture
+## 📖 Documentation Hub
 
-- **Storage Engine**: In-memory columnar/row hybrid store with specialized indices (HashIndex, VectorIndex).
-- **Query Engine**: Logical -> Physical plan optimization with predicate pushdown and index-aware execution.
-- **Type System**: Strong typing with inference for arithmetic expressions (`Matrix + Float = Matrix`).
-- **Aggregation Engine**: Full SQL aggregation support (SUM, AVG, COUNT, MIN, MAX) with element-wise operations on vectors and matrices.
-- **Schema Evolution**: Dynamic column addition with computed columns support (`ADD COLUMN x = expression`).
+LINALDB is extensively documented to help you scale from local experiments to production services.
 
-## Performance
+- **[Architecture](docs/ARCHITECTURE.md)**: Deep dive into the internal engine design.
+- [x] **[DSL Reference](docs/DSL_REFERENCE.md)**: Complete guide to keywords, operators, and syntax.
+- [x] **[Performance & Benchmarks](docs/BENCHMARKS.md)**: How we achieve 2.5x speedups via SIMD and Rayon.
+- [x] **[Example Gallery](docs/EXAMPLES.md)**: Curated snippets for common ML and analytical workflows.
+- [x] **[Error Reference](docs/ERROR_REFERENCE.md)**: Troubleshooting guide for engine and DSL errors.
 
-LINAL has undergone comprehensive performance optimization (Phases 7-11):
+---
 
-### Key Optimizations
+## ⚖️ License
 
-- **Zero-Copy Views**: Reshape, transpose, and slice operations are O(1) metadata-only transformations
-- **SIMD Acceleration**: Platform-specific SIMD kernels (NEON, SSE/AVX) for vector operations
-- **Parallel Execution**: Rayon-based parallelization for large tensors (≥50k elements) - **2.5x speedup**
-- **Smart Allocation**: Three-tier strategy (stack/direct/pool) based on tensor size
-- **Memory Management**: Arena allocation with configurable limits (default 100MB per context)
+LINALDB is licensed under the **LinalDB Community License v1.0**.
 
-### Allocation Strategy
+- ✅ **Permitted**: Personal use, research, education, and internal organizational use.
+- ⚠️ **Restricted**: Commercial redistribution, managed services (DBaaS/SaaS), and direct monetization require a separate **Commercial License**.
 
-```text
-≤16 elements    → Stack allocation (SmallVec) - zero heap allocation
-17-255 elements → Direct heap allocation - minimal overhead
-≥256 elements   → Tensor pooling - reuse allocations
-```
+For commercial licensing inquiries, please contact: [develop@gorigami.xyz](mailto:develop@gorigami.xyz)
 
-### Performance Results
+---
 
-| Optimization | Impact |
-|--------------|--------|
-| Zero-overhead metadata | ~10% improvement |
-| Zero-copy views | Zero allocation for transforms |
-| Rayon parallelization | 2.5x on 100k+ element tensors |
-| Tensor pooling | 3-18% improvement |
-| Stack allocation | Zero heap for tiny tensors |
-
-**Benchmark Status**: All operations stable with zero regressions. See [BENCHMARKS.md](docs/BENCHMARKS.md) for details.
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md) - System architecture and design
-- [Performance Benchmarks](docs/BENCHMARKS.md) - Performance results and optimization details
-- [DSL Reference](docs/DSL_REFERENCE.md) - Complete DSL command reference
-- [Roadmap & Status](docs/Tasks_implementations.md) - Development roadmap
-- [Changelog](CHANGELOG.md) - Version history
-- [Contributing](CONTRIBUTING.md) - How to contribute
-- [Security](SECURITY.md) - Security policy and considerations
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
+**LINALDB**: *Where SQL meets Linear Algebra.*
 Copyright (c) 2025 gorigami (gorigami.xyz)
-
----
-
-**LINAL**: *Where SQL meets Linear Algebra.*
