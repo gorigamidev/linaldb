@@ -1,3 +1,4 @@
+pub mod delivery_dsl;
 pub mod error;
 pub mod handlers;
 // pub mod parser; // Not used currently, logic is in handlers/parsing logic
@@ -160,7 +161,10 @@ pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Dsl
 /// Check if a command is read-only
 pub fn is_read_only(line: &str) -> bool {
     let line = line.trim();
-    line.starts_with("EXPLAIN ") || line.starts_with("AUDIT ") || line.starts_with("LIST ")
+    line.starts_with("EXPLAIN ")
+        || line.starts_with("AUDIT ")
+        || line.starts_with("LIST ")
+        || line.starts_with("DELIVER ")
 }
 
 /// Execute a single DSL line with an immutable reference to the DB (Shared access)
@@ -214,6 +218,8 @@ pub fn execute_line_with_context(
         handle_show(db, line, line_no)
     } else if line.starts_with("SELECT ") {
         handlers::dataset::handle_select(db, line, line_no)
+    } else if line.starts_with("DELIVER ") {
+        handlers::dataset::handle_deliver(db, line, line_no)
     } else if line.starts_with("BIND ") {
         handlers::semantics::handle_bind(db, line, line_no)
     } else if line.starts_with("ATTACH ") {

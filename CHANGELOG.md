@@ -5,14 +5,29 @@ All notable changes to LINAL will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.13] - 2026-01-07
 
-### Planned
+### Added - Phase 16: Dataset Delivery & Server Exposure
 
-- [ ] Distributed execution
-- [ ] Columnar execution engine
-- [ ] Python/WASM integration
-- [ ] Native ML operators (KNN, clustering, PCA)
+- **Standardized Dataset Packaging**
+  - Implemented folder-based storage for datasets: `datasets/{name}/`.
+  - Automated generation of `data.parquet` (authoritative data layer).
+  - Automated generation of `manifest.json` (delivery contract & entrypoint).
+  - Automated generation of `schema.json` (logical + physical schema mapping).
+  - Automated generation of `stats.json` (columnar statistics & sparsity).
+  - Automated generation of `lineage.json` (DAG-based derivation history).
+- **Read-Only Dataset Server**
+  - New modular HTTP server for sub-resource delivery.
+  - Integration into main Axum server at `/delivery` prefix.
+  - Endpoints for metadata introspection and component retrieval.
+- **Delivery DSL Foundations**
+  - Support for `DELIVER` and `SELECT` commands in the delivery context.
+  - Read-only projection engine for serving customized views.
+
+### Changed
+
+- Updated `ParquetStorage` to use directory-based discovery.
+- Refactored `tests/persistence_test.rs` to validate new package structure.
 
 ## [0.1.12] - 2026-01-06
 
@@ -506,7 +521,6 @@ LINAL is positioned as:
 
 ---
 
-[Unreleased]: https://github.com/gorigami/linal/compare/v0.1.11...HEAD
 [0.1.11]: https://github.com/gorigami/linal/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/gorigami/linal/compare/v0.1.9...v0.1.10
 [0.1.8]: https://github.com/gorigami/linal/compare/v0.1.7...v0.1.8

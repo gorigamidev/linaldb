@@ -1,3 +1,4 @@
+pub mod dataset_server;
 pub mod jobs;
 pub mod scheduler;
 
@@ -87,8 +88,11 @@ pub async fn start_server(db: Arc<RwLock<TensorDb>>, port: u16) {
         job_manager,
     });
 
+    // Dataset Delivery Routes (Read-Only)
+    let storage = Arc::new(crate::core::storage::ParquetStorage::new("./data"));
+    let ds_server = dataset_server::DatasetServer::new(storage);
+
     let app = Router::new()
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/health", get(health_check))
         .route("/execute", post(execute_command))
         .route("/databases", get(list_databases))
@@ -101,7 +105,9 @@ pub async fn start_server(db: Arc<RwLock<TensorDb>>, port: u16) {
         .route("/jobs", get(list_jobs).post(submit_job))
         .route("/jobs/:id", get(get_job).delete(cancel_job))
         .route("/jobs/:id/result", get(get_job_result))
-        .with_state(state);
+        .with_state(state)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .nest("/delivery", ds_server.router()); // Mount dataset server at /delivery
 
     let addr = format!("0.0.0.0:{}", port);
     println!("Server running at http://{}", addr);

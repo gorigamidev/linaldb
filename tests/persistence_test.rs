@@ -77,8 +77,17 @@ fn test_save_dataset_creates_files() {
 
     // Verify files exist
     assert!(storage.dataset_exists("test_users"));
-    assert!(std::path::Path::new(&format!("{}/datasets/test_users.parquet", temp_dir)).exists());
-    assert!(std::path::Path::new(&format!("{}/datasets/test_users.meta.json", temp_dir)).exists());
+    // New standardized structure: datasets/{name}/data.parquet
+    assert!(
+        std::path::Path::new(&format!("{}/datasets/test_users/data.parquet", temp_dir)).exists()
+    );
+    assert!(
+        std::path::Path::new(&format!("{}/datasets/test_users/manifest.json", temp_dir)).exists()
+    );
+    assert!(
+        std::path::Path::new(&format!("{}/datasets/test_users/schema.json", temp_dir)).exists()
+    );
+    assert!(std::path::Path::new(&format!("{}/datasets/test_users/stats.json", temp_dir)).exists());
 
     // Clean up
     let _ = fs::remove_dir_all(temp_dir);
@@ -233,15 +242,19 @@ fn test_metadata_preservation() {
     // Save dataset
     storage.save_dataset(&dataset).unwrap();
 
-    // Read metadata file directly
-    let meta_path = format!("{}/datasets/metadata_test.meta.json", temp_dir);
-    let meta_json = fs::read_to_string(&meta_path).unwrap();
+    // Read manifest file directly
+    let manifest_path = format!("{}/datasets/metadata_test/manifest.json", temp_dir);
+    let manifest_json = fs::read_to_string(&manifest_path).unwrap();
 
-    // Verify metadata contains expected fields
-    assert!(meta_json.contains("\"name\""));
-    assert!(meta_json.contains("metadata_test"));
-    assert!(meta_json.contains("\"row_count\""));
-    assert!(meta_json.contains("\"column_stats\""));
+    // Verify manifest contains expected fields
+    assert!(manifest_json.contains("\"name\""));
+    assert!(manifest_json.contains("metadata_test"));
+    assert!(manifest_json.contains("\"version\""));
+
+    // Read stats file directly
+    let stats_path = format!("{}/datasets/metadata_test/stats.json", temp_dir);
+    let stats_json = fs::read_to_string(&stats_path).unwrap();
+    assert!(stats_json.contains("\"row_count\""));
 
     // Clean up
     let _ = fs::remove_dir_all(temp_dir);

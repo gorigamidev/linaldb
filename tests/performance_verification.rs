@@ -176,7 +176,7 @@ fn test_zero_copy_slice() {
 
     // Verify ZERO-COPY
     assert_eq!(a.data.as_ptr(), b.data.as_ptr());
-    assert_eq!(b.offset, a.offset + 1 * 4); // offset by 1 row (4 elements)
+    assert_eq!(b.offset, a.offset + 4); // offset by 1 row (4 elements)
 
     use linal::engine::kernels::index;
     assert_eq!(index(&b, &[0, 0]).unwrap(), 4.0);

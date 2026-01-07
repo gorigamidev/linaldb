@@ -9,7 +9,7 @@ use linal::engine::db::TensorDb;
 fn dataset_creation_benchmark(c: &mut Criterion) {
     c.bench_function("create_dataset", |bench| {
         bench.iter_batched(
-            || TensorDb::new(),
+            TensorDb::new,
             |mut db| {
                 execute_line(&mut db, black_box("DATASET users COLUMNS (id: INT, name: STRING, age: INT, active: BOOL, score: FLOAT)"), 1).unwrap()
             },

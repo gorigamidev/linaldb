@@ -89,7 +89,7 @@ fn test_context_arena_stats() {
 
     // Allocate some temporary values
     let _val1 = ctx.alloc_temp(42);
-    let _val2 = ctx.alloc_temp(3.14);
+    let _val2 = ctx.alloc_temp(std::f64::consts::PI);
     let _slice = ctx.alloc_slice(&[1, 2, 3, 4, 5]);
 
     // Check that arena allocated memory

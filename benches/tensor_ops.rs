@@ -13,7 +13,7 @@ fn vector_creation_benchmark(c: &mut Criterion) {
     for size in [128, 512, 4096].iter() {
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |bench, &size| {
             bench.iter_batched(
-                || TensorDb::new(),
+                TensorDb::new,
                 |mut db| {
                     let values: Vec<String> = (0..size).map(|i| format!("{}.0", i)).collect();
                     let vector_def = format!("VECTOR v1 = [{}]", values.join(", "));
@@ -91,7 +91,7 @@ fn similarity_benchmark(c: &mut Criterion) {
 fn matrix_operations_benchmark(c: &mut Criterion) {
     c.bench_function("matrix_creation", |bench| {
         bench.iter_batched(
-            || TensorDb::new(),
+            TensorDb::new,
             |mut db| {
                 execute_line(
                     &mut db,

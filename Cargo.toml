@@ -1,6 +1,6 @@
 [package]
 name = "linal"
-version = "0.1.9"
+version = "0.1.13"
 edition = "2021"
 description = "In-memory linear algebra engine for vectors, matrices and tensors"
 
@@ -38,6 +38,7 @@ zero-copy = []  # Enable Arc-based tensor storage
 experimental = ["zero-copy"]  # Bundle experimental features
 
 [dev-dependencies]
+tower = { version = "0.5.2", features = ["util"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]

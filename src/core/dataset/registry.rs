@@ -1,4 +1,4 @@
-use super::dataset::Dataset;
+use super::Dataset;
 use std::collections::HashMap;
 
 /// Registry to track datasets within the runtime scope.

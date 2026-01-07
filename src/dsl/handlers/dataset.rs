@@ -143,6 +143,26 @@ pub fn handle_select(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
     Ok(DslOutput::Table(ds))
 }
 
+/// DELIVER dataset [SELECT col1, col2] [SHAPE col1: [idx1, idx2]] [FORMAT json|toon|parquet]
+pub fn handle_deliver(_db: &TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    let rest = line.trim_start_matches("DELIVER").trim();
+    if rest.is_empty() {
+        return Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected: DELIVER dataset_name ...".into(),
+        });
+    }
+
+    // Very basic parsing for Phase 1
+    let parts: Vec<&str> = rest.split_whitespace().collect();
+    let dataset = parts[0].to_string();
+
+    Ok(DslOutput::Message(format!(
+        "Delivery Projection for '{}' created. (Phase 1 Read-Only View)",
+        dataset
+    )))
+}
+
 pub fn build_select_query_plan(
     db: &TensorDb,
     line: &str,

@@ -1,4 +1,8 @@
-use crate::core::dataset_legacy::{Dataset, DatasetMetadata};
+use crate::core::dataset::{
+    ColumnSchema, ColumnStats, DatasetLineage, DatasetManifest, DatasetMetadata, DatasetOrigin,
+    DatasetSchema, DatasetStats, LineageNode,
+};
+use crate::core::dataset_legacy::{Dataset, DatasetMetadata as DatasetMetadataLegacy};
 use crate::core::tensor::Tensor;
 use crate::core::tuple::{Schema, Tuple};
 use crate::core::value::{Value, ValueType};
@@ -94,15 +98,39 @@ impl ParquetStorage {
         }
     }
 
-    fn dataset_path(&self, name: &str) -> String {
-        format!("{}/datasets/{}.parquet", self.base_path, name)
+    pub fn base_path(&self) -> &str {
+        &self.base_path
     }
 
-    fn metadata_path(&self, name: &str) -> String {
+    fn dataset_dir(&self, name: &str) -> String {
+        format!("{}/datasets/{}", self.base_path, name)
+    }
+
+    fn dataset_data_path(&self, name: &str) -> String {
+        format!("{}/datasets/{}/data.parquet", self.base_path, name)
+    }
+
+    fn dataset_schema_path(&self, name: &str) -> String {
+        format!("{}/datasets/{}/schema.json", self.base_path, name)
+    }
+
+    fn dataset_stats_path(&self, name: &str) -> String {
+        format!("{}/datasets/{}/stats.json", self.base_path, name)
+    }
+
+    fn dataset_lineage_path(&self, name: &str) -> String {
+        format!("{}/datasets/{}/lineage.json", self.base_path, name)
+    }
+
+    fn dataset_manifest_path(&self, name: &str) -> String {
+        format!("{}/datasets/{}/manifest.json", self.base_path, name)
+    }
+
+    fn legacy_metadata_path(&self, name: &str) -> String {
         format!("{}/datasets/{}.meta.json", self.base_path, name)
     }
 
-    fn persistent_metadata_path(&self, name: &str) -> String {
+    fn legacy_persistent_metadata_path(&self, name: &str) -> String {
         format!("{}/datasets/{}.metadata.json", self.base_path, name)
     }
 
@@ -110,11 +138,16 @@ impl ParquetStorage {
         format!("{}/tensors/{}.json", self.base_path, name)
     }
 
-    fn ensure_directories(&self) -> Result<(), StorageError> {
+    fn ensure_directories(&self, name: Option<&str>) -> Result<(), StorageError> {
         let datasets_dir = format!("{}/datasets", self.base_path);
         let tensors_dir = format!("{}/tensors", self.base_path);
-        fs::create_dir_all(datasets_dir)?;
-        fs::create_dir_all(tensors_dir)?;
+        fs::create_dir_all(&datasets_dir)?;
+        fs::create_dir_all(&tensors_dir)?;
+
+        if let Some(n) = name {
+            let ds_dir = self.dataset_dir(n);
+            fs::create_dir_all(ds_dir)?;
+        }
         Ok(())
     }
 
@@ -123,8 +156,8 @@ impl ParquetStorage {
         &self,
         metadata: &crate::core::dataset::DatasetMetadata,
     ) -> Result<(), StorageError> {
-        self.ensure_directories()?;
-        let path = self.persistent_metadata_path(&metadata.name);
+        self.ensure_directories(Some(&metadata.name))?;
+        let path = self.legacy_persistent_metadata_path(&metadata.name);
         let json = serde_json::to_string_pretty(metadata).map_err(|e| {
             StorageError::Serialization(format!("Failed to serialize metadata: {}", e))
         })?;
@@ -137,7 +170,7 @@ impl ParquetStorage {
         &self,
         name: &str,
     ) -> Result<crate::core::dataset::DatasetMetadata, StorageError> {
-        let path = self.persistent_metadata_path(name);
+        let path = self.legacy_persistent_metadata_path(name);
         if !Path::new(&path).exists() {
             return Err(StorageError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
@@ -153,7 +186,109 @@ impl ParquetStorage {
 
     /// Check if metadata exists for a dataset
     pub fn metadata_exists(&self, name: &str) -> bool {
-        Path::new(&self.persistent_metadata_path(name)).exists()
+        Path::new(&self.legacy_persistent_metadata_path(name)).exists()
+    }
+    /// Save a complete dataset package (folder-based)
+    pub fn save_dataset_package(
+        &self,
+        name: &str,
+        batch: &RecordBatch,
+        metadata: &DatasetMetadata,
+        lineage: &DatasetLineage,
+    ) -> Result<(), StorageError> {
+        self.ensure_directories(Some(name))?;
+
+        // 1. Save data.parquet
+        let data_path = self.dataset_data_path(name);
+        let file = fs::File::create(&data_path)?;
+        let props = WriterProperties::builder().build();
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
+        writer.write(batch)?;
+        writer.close()?;
+
+        // 2. Save schema.json
+        let schema_path = self.dataset_schema_path(name);
+        let schema: DatasetSchema = batch.schema().clone().into();
+        let schema_json = serde_json::to_string_pretty(&schema)
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        fs::write(schema_path, schema_json)?;
+
+        // 3. Save stats.json
+        let stats_path = self.dataset_stats_path(name);
+        let stats = self.compute_stats(batch);
+        let stats_json = serde_json::to_string_pretty(&stats)
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        fs::write(stats_path, stats_json)?;
+
+        // 4. Save lineage.json
+        let lineage_path = self.dataset_lineage_path(name);
+        let lineage_json = serde_json::to_string_pretty(lineage)
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        fs::write(lineage_path, lineage_json)?;
+
+        // 5. Save manifest.json
+        let manifest_path = self.dataset_manifest_path(name);
+        let mut manifest =
+            DatasetManifest::new(name.to_string(), "1.0".to_string(), metadata.hash.clone());
+        manifest
+            .formats
+            .insert("parquet".to_string(), "data.parquet".to_string());
+        manifest
+            .entrypoints
+            .insert("default".to_string(), "data.parquet".to_string());
+
+        let manifest_json = serde_json::to_string_pretty(&manifest)
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        fs::write(manifest_path, manifest_json)?;
+
+        Ok(())
+    }
+
+    fn compute_stats(&self, batch: &RecordBatch) -> DatasetStats {
+        let mut stats = DatasetStats::new(batch.num_rows() as u64);
+        // Basic stats implementation
+        for field in batch.schema().fields() {
+            let col_name = field.name();
+            let array = batch.column_by_name(col_name).unwrap();
+            let null_count = array.null_count() as u64;
+
+            stats.add_column_stats(
+                col_name.to_string(),
+                ColumnStats {
+                    min: None, // TODO: Implement min/max per type
+                    max: None,
+                    mean: None,
+                    sparsity: Some(1.0 - (null_count as f32 / batch.num_rows() as f32)),
+                    null_count,
+                    tensor_shape: None,
+                },
+            );
+        }
+        stats
+    }
+}
+
+impl From<Arc<ArrowSchema>> for DatasetSchema {
+    fn from(arrow_schema: Arc<ArrowSchema>) -> Self {
+        let columns = arrow_schema
+            .fields()
+            .iter()
+            .map(|f| {
+                let vt = match f.data_type() {
+                    DataType::Int64 => ValueType::Int,
+                    DataType::Float32 | DataType::Float64 => ValueType::Float,
+                    DataType::Boolean => ValueType::Bool,
+                    _ => ValueType::String,
+                };
+                ColumnSchema::new(
+                    f.name().clone(),
+                    vt,
+                    crate::core::tensor::Shape::new(vec![]),
+                )
+                .with_nullable(f.is_nullable())
+            })
+            .collect();
+        Self { columns }
     }
 }
 
@@ -405,26 +540,37 @@ pub fn dataset_to_record_batch(dataset: &Dataset) -> Result<RecordBatch, Storage
 
 impl StorageEngine for ParquetStorage {
     fn save_dataset(&self, dataset: &Dataset) -> Result<(), StorageError> {
-        self.ensure_directories()?;
-
         let dataset_name =
             dataset.metadata.name.as_ref().ok_or_else(|| {
                 StorageError::Serialization("Dataset must have a name".to_string())
             })?;
 
-        // Convert to RecordBatch
+        // 1. Convert to RecordBatch
         let record_batch = dataset_to_record_batch(dataset)?;
 
-        // Write to Parquet file
-        let data_path = self.dataset_path(dataset_name);
-        let file = fs::File::create(&data_path)?;
-        let props = WriterProperties::builder().build();
-        let mut writer = ArrowWriter::try_new(file, record_batch.schema(), Some(props))?;
-        writer.write(&record_batch)?;
-        writer.close()?;
+        // 2. Generate new Metadata
+        let mut metadata = DatasetMetadata::new(dataset_name.to_string(), DatasetOrigin::Created);
 
-        // Save metadata as JSON
-        let meta_path = self.metadata_path(dataset_name);
+        // Compute content hash (simple hash based on row count and name)
+        let content_hash = format!("{}:{}", dataset_name, dataset.rows.len());
+        metadata.update_hash(content_hash);
+
+        // 3. Generate minimal Lineage
+        let mut lineage = DatasetLineage::new();
+        lineage.add_node(LineageNode {
+            id: uuid::Uuid::new_v4(),
+            dataset_name: dataset_name.to_string(),
+            dataset_hash: metadata.hash.clone(),
+            operation: "SAVE (Legacy)".to_string(),
+            parents: vec![],
+            engine_version: env!("CARGO_PKG_VERSION").to_string(),
+        });
+
+        // 4. Save as full package
+        self.save_dataset_package(dataset_name, &record_batch, &metadata, &lineage)?;
+
+        // 5. Also save legacy metadata for backward compatibility (optional but safer for now)
+        let meta_path = self.legacy_metadata_path(dataset_name);
         let metadata_json = serde_json::to_string_pretty(&dataset.metadata)
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
         fs::write(&meta_path, metadata_json)?;
@@ -433,16 +579,16 @@ impl StorageEngine for ParquetStorage {
     }
 
     fn load_dataset(&self, name: &str) -> Result<Dataset, StorageError> {
-        let meta_path = self.metadata_path(name);
+        let meta_path = self.legacy_metadata_path(name);
         if !Path::new(&meta_path).exists() {
             return Err(StorageError::DatasetNotFound(name.to_string()));
         }
 
         let metadata_json = fs::read_to_string(&meta_path)?;
-        let metadata: DatasetMetadata = serde_json::from_str(&metadata_json)
+        let metadata: DatasetMetadataLegacy = serde_json::from_str(&metadata_json)
             .map_err(|e| StorageError::Serialization(format!("Metadata error: {}", e)))?;
 
-        let data_path = self.dataset_path(name);
+        let data_path = self.dataset_data_path(name);
         if !Path::new(&data_path).exists() {
             return Err(StorageError::DatasetNotFound(format!(
                 "Data file missing for {}",
@@ -482,8 +628,11 @@ impl StorageEngine for ParquetStorage {
         &self,
         dataset: &crate::core::dataset::Dataset,
     ) -> Result<(), StorageError> {
-        self.ensure_directories()?;
-        let path = format!("{}/datasets/{}.ref.json", self.base_path, dataset.name);
+        self.ensure_directories(Some(&dataset.name))?;
+        let path = format!(
+            "{}/datasets/{}/{}.ref.json",
+            self.base_path, dataset.name, dataset.name
+        );
         let json = serde_json::to_string_pretty(dataset)
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
         fs::write(path, json)?;
@@ -505,15 +654,16 @@ impl StorageEngine for ParquetStorage {
     }
 
     fn dataset_exists(&self, name: &str) -> bool {
-        Path::new(&self.dataset_path(name)).exists()
+        Path::new(&self.dataset_data_path(name)).exists()
     }
 
     fn delete_dataset(&self, name: &str) -> Result<(), StorageError> {
-        let data_path = self.dataset_path(name);
-        let meta_path = self.metadata_path(name);
-        if Path::new(&data_path).exists() {
-            fs::remove_file(&data_path)?;
+        let dir = self.dataset_dir(name);
+        if Path::new(&dir).exists() {
+            fs::remove_dir_all(&dir)?;
         }
+
+        let meta_path = self.legacy_metadata_path(name);
         if Path::new(&meta_path).exists() {
             fs::remove_file(&meta_path)?;
         }
@@ -521,15 +671,20 @@ impl StorageEngine for ParquetStorage {
     }
 
     fn list_datasets(&self) -> Result<Vec<String>, StorageError> {
-        self.ensure_directories()?;
+        self.ensure_directories(None)?;
         let datasets_dir = format!("{}/datasets", self.base_path);
         let mut datasets = Vec::new();
         for entry in fs::read_dir(&datasets_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("parquet") {
-                if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
-                    datasets.push(name.to_string());
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                    // Check if it's a valid package by looking for data.parquet or manifest.json
+                    let data_path = path.join("data.parquet");
+                    let manifest_path = path.join("manifest.json");
+                    if data_path.exists() || manifest_path.exists() {
+                        datasets.push(name.to_string());
+                    }
                 }
             }
         }
@@ -537,7 +692,7 @@ impl StorageEngine for ParquetStorage {
     }
 
     fn save_tensor(&self, name: &str, tensor: &Tensor) -> Result<(), StorageError> {
-        self.ensure_directories()?;
+        self.ensure_directories(None)?;
         let tensor_path = self.tensor_path(name);
         let tensor_json = serde_json::to_string_pretty(tensor)
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
@@ -569,7 +724,7 @@ impl StorageEngine for ParquetStorage {
     }
 
     fn list_tensors(&self) -> Result<Vec<String>, StorageError> {
-        self.ensure_directories()?;
+        self.ensure_directories(None)?;
         let tensors_dir = format!("{}/tensors", self.base_path);
         let mut tensors = Vec::new();
         for entry in fs::read_dir(&tensors_dir)? {
@@ -675,7 +830,7 @@ mod tests {
         let temp_dir = "/tmp/linal_test_storage";
         let storage = ParquetStorage::new(temp_dir);
         let _ = fs::remove_dir_all(temp_dir);
-        storage.ensure_directories().unwrap();
+        storage.ensure_directories(None).unwrap();
         assert!(Path::new(&format!("{}/datasets", temp_dir)).exists());
         assert!(Path::new(&format!("{}/tensors", temp_dir)).exists());
         let _ = fs::remove_dir_all(temp_dir);

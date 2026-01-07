@@ -1,20 +1,10 @@
 {
   "name": "test_output",
-  "created_at": "2026-01-07T04:29:12.496926Z",
-  "updated_at": "2026-01-07T04:29:12.496929Z",
+  "created_at": "2026-01-07T06:14:57.272933Z",
+  "updated_at": "2026-01-07T06:14:57.272935Z",
   "version": 1,
   "row_count": 3,
   "column_stats": {
-    "vec": {
-      "value_type": "Float",
-      "null_count": 0,
-      "min": {
-        "Float": 1.0
-      },
-      "max": {
-        "Float": 3.0
-      }
-    },
     "vec_doubled": {
       "value_type": "Float",
       "null_count": 0,
@@ -23,6 +13,16 @@
       },
       "max": {
         "Float": 6.0
+      }
+    },
+    "vec": {
+      "value_type": "Float",
+      "null_count": 0,
+      "min": {
+        "Float": 1.0
+      },
+      "max": {
+        "Float": 3.0
       }
     }
   },
@@ -42,8 +42,8 @@
       }
     ],
     "field_indices": {
-      "vec": 0,
-      "vec_doubled": 1
+      "vec_doubled": 1,
+      "vec": 0
     }
   },
   "extra": {}

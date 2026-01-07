@@ -13,6 +13,7 @@ LINALDB is designed for developers and researchers who need the structure of a d
 - **Numerical Aggregations**: Native `SUM`, `MEAN`, and `STDEV` operations for powerful statistical analysis.
 - **Semantic Transformations**: Build zero-copy views using Reference Graphs and Lineage tracking.
 - **Local-First & Portable**: Use it as an embedded library (like SQLite) or a multi-tenant managed server.
+- **Dataset Delivery & Packages**: Standardized portable packages with Parquet data and JSON metadata (Schema, Stats, Lineage).
 - **High Performance**: 2.5x speedup via SIMD, Rayon parallelization, and intelligent tensor pooling.
 
 ---
