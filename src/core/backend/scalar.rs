@@ -121,6 +121,33 @@ impl ComputeBackend for ScalarBackend {
         kernels::flatten_with_timestamp(a, new_id, _ctx.created_at)
     }
 
+    fn sum(
+        &self,
+        _ctx: &mut ExecutionContext,
+        a: &Tensor,
+        new_id: TensorId,
+    ) -> Result<Tensor, String> {
+        kernels::sum_with_timestamp(a, new_id, _ctx.created_at)
+    }
+
+    fn mean(
+        &self,
+        _ctx: &mut ExecutionContext,
+        a: &Tensor,
+        new_id: TensorId,
+    ) -> Result<Tensor, String> {
+        kernels::mean_with_timestamp(a, new_id, _ctx.created_at)
+    }
+
+    fn stdev(
+        &self,
+        _ctx: &mut ExecutionContext,
+        a: &Tensor,
+        new_id: TensorId,
+    ) -> Result<Tensor, String> {
+        kernels::stdev_with_timestamp(a, new_id, _ctx.created_at)
+    }
+
     fn reshape(
         &self,
         _ctx: &mut ExecutionContext,

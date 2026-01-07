@@ -33,6 +33,8 @@ pub struct DatabaseInstance {
     pub tensor_datasets: crate::core::dataset::DatasetRegistry,
     pub dataset_vars: HashMap<String, String>,
     pub backend: Box<dyn crate::core::backend::ComputeBackend>,
+    /// Almacenamiento de expresiones para tensores perezosos
+    pub lazy_store: HashMap<TensorId, crate::core::tensor::Expression>,
 }
 
 impl DatabaseInstance {
@@ -45,6 +47,7 @@ impl DatabaseInstance {
             tensor_datasets: crate::core::dataset::DatasetRegistry::new(),
             dataset_vars: HashMap::new(),
             backend: Box::new(crate::core::backend::CpuBackend::new()),
+            lazy_store: HashMap::new(),
         }
     }
 
@@ -576,6 +579,44 @@ impl TensorDb {
             .eval_matmul(ctx, output_name, left_name, right_name)
     }
 
+    pub fn eval_lazy_binary(
+        &mut self,
+        ctx: &mut ExecutionContext,
+        output_name: &str,
+        left_name: &str,
+        right_name: &str,
+        op: BinaryOp,
+    ) -> Result<(), EngineError> {
+        self.active_instance_mut()
+            .eval_lazy_binary(ctx, output_name, left_name, right_name, op)
+    }
+
+    pub fn eval_lazy_unary(
+        &mut self,
+        ctx: &mut ExecutionContext,
+        output_name: &str,
+        input_name: &str,
+        op: UnaryOp,
+    ) -> Result<(), EngineError> {
+        self.active_instance_mut()
+            .eval_lazy_unary(ctx, output_name, input_name, op)
+    }
+
+    pub fn eval_lazy_matmul(
+        &mut self,
+        ctx: &mut ExecutionContext,
+        output_name: &str,
+        left_name: &str,
+        right_name: &str,
+    ) -> Result<(), EngineError> {
+        self.active_instance_mut()
+            .eval_lazy_matmul(ctx, output_name, left_name, right_name)
+    }
+
+    pub fn evaluate(&mut self, name: &str) -> Result<(), EngineError> {
+        self.active_instance_mut().evaluate(name)
+    }
+
     pub fn eval_reshape(
         &mut self,
         ctx: &mut ExecutionContext,
@@ -958,6 +999,18 @@ impl DatabaseInstance {
             UnaryOp::Flatten => self
                 .backend
                 .flatten(ctx, &in_tensor, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            UnaryOp::Sum => self
+                .backend
+                .sum(ctx, &in_tensor, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            UnaryOp::Mean => self
+                .backend
+                .mean(ctx, &in_tensor, new_id)
+                .map_err(EngineError::InvalidOp)?,
+            UnaryOp::Stdev => self
+                .backend
+                .stdev(ctx, &in_tensor, new_id)
                 .map_err(EngineError::InvalidOp)?,
         };
 
@@ -1527,5 +1580,142 @@ impl DatabaseInstance {
             }
         }
         result
+    }
+
+    pub fn eval_lazy_binary(
+        &mut self,
+        _ctx: &mut ExecutionContext,
+        output_name: &str,
+        left_name: &str,
+        right_name: &str,
+        op: BinaryOp,
+    ) -> Result<(), EngineError> {
+        let left_expr = self.get_expression_or_literal(left_name)?;
+        let right_expr = self.get_expression_or_literal(right_name)?;
+
+        let expr = match op {
+            BinaryOp::Add => {
+                crate::core::tensor::Expression::Add(Box::new(left_expr), Box::new(right_expr))
+            }
+            BinaryOp::Subtract => {
+                crate::core::tensor::Expression::Sub(Box::new(left_expr), Box::new(right_expr))
+            }
+            BinaryOp::Multiply => {
+                crate::core::tensor::Expression::Multiply(Box::new(left_expr), Box::new(right_expr))
+            }
+            BinaryOp::Divide => {
+                crate::core::tensor::Expression::Divide(Box::new(left_expr), Box::new(right_expr))
+            }
+            _ => return Err(EngineError::InvalidOp(format!("Lazy {} not supported", op))),
+        };
+
+        self.register_lazy(output_name, expr)
+    }
+
+    pub fn eval_lazy_unary(
+        &mut self,
+        _ctx: &mut ExecutionContext,
+        output_name: &str,
+        input_name: &str,
+        op: UnaryOp,
+    ) -> Result<(), EngineError> {
+        let inner_expr = self.get_expression_or_literal(input_name)?;
+
+        let expr = match op {
+            UnaryOp::Scale(s) => {
+                crate::core::tensor::Expression::ScalarMul(Box::new(inner_expr), s)
+            }
+            UnaryOp::Normalize => crate::core::tensor::Expression::Normalize(Box::new(inner_expr)),
+            UnaryOp::Sum => crate::core::tensor::Expression::Sum(Box::new(inner_expr)),
+            UnaryOp::Mean => crate::core::tensor::Expression::Mean(Box::new(inner_expr)),
+            UnaryOp::Stdev => crate::core::tensor::Expression::Stdev(Box::new(inner_expr)),
+            _ => return Err(EngineError::InvalidOp(format!("Lazy {} not supported", op))),
+        };
+
+        self.register_lazy(output_name, expr)
+    }
+
+    pub fn eval_lazy_matmul(
+        &mut self,
+        _ctx: &mut ExecutionContext,
+        output_name: &str,
+        left_name: &str,
+        right_name: &str,
+    ) -> Result<(), EngineError> {
+        let left_expr = self.get_expression_or_literal(left_name)?;
+        let right_expr = self.get_expression_or_literal(right_name)?;
+
+        let expr =
+            crate::core::tensor::Expression::MatMul(Box::new(left_expr), Box::new(right_expr));
+        self.register_lazy(output_name, expr)
+    }
+
+    fn get_expression_or_literal(
+        &self,
+        name: &str,
+    ) -> Result<crate::core::tensor::Expression, EngineError> {
+        let entry = self
+            .names
+            .get(name)
+            .ok_or_else(|| EngineError::NameNotFound(name.to_string()))?;
+
+        if entry.kind == TensorKind::Lazy {
+            let expr = self
+                .lazy_store
+                .get(&entry.id)
+                .ok_or_else(|| EngineError::ExecutionError("Lazy expression missing".into()))?;
+            Ok(expr.clone())
+        } else {
+            let tensor = self.store.get(entry.id).map_err(EngineError::Store)?;
+            Ok(crate::core::tensor::Expression::Literal((*tensor).clone()))
+        }
+    }
+
+    fn register_lazy(
+        &mut self,
+        name: &str,
+        expr: crate::core::tensor::Expression,
+    ) -> Result<(), EngineError> {
+        let id = TensorId::new();
+        self.names.insert(
+            name.to_string(),
+            NameEntry {
+                id,
+                kind: TensorKind::Lazy,
+            },
+        );
+        self.lazy_store.insert(id, expr);
+        Ok(())
+    }
+
+    pub fn evaluate(&mut self, name: &str) -> Result<(), EngineError> {
+        let entry = self
+            .names
+            .get(name)
+            .ok_or_else(|| EngineError::NameNotFound(name.to_string()))?;
+
+        if entry.kind != TensorKind::Lazy {
+            return Ok(());
+        }
+
+        let expr = self
+            .lazy_store
+            .get(&entry.id)
+            .ok_or_else(|| EngineError::ExecutionError("Lazy expression missing".into()))?;
+
+        let timestamp = chrono::Utc::now();
+        let materialized = crate::engine::kernels::evaluate_expression(expr, timestamp)
+            .map_err(EngineError::ExecutionError)?;
+
+        self.store.insert_existing_tensor(materialized.clone())?;
+        self.names.insert(
+            name.to_string(),
+            NameEntry {
+                id: materialized.id,
+                kind: TensorKind::Normal,
+            },
+        );
+
+        Ok(())
     }
 }

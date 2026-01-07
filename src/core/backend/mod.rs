@@ -110,6 +110,26 @@ pub trait ComputeBackend: std::fmt::Debug + Send + Sync {
         new_id: TensorId,
     ) -> Result<Tensor, String>;
 
+    // Statistical Aggregations
+    fn sum(
+        &self,
+        ctx: &mut ExecutionContext,
+        a: &Tensor,
+        new_id: TensorId,
+    ) -> Result<Tensor, String>;
+    fn mean(
+        &self,
+        ctx: &mut ExecutionContext,
+        a: &Tensor,
+        new_id: TensorId,
+    ) -> Result<Tensor, String>;
+    fn stdev(
+        &self,
+        ctx: &mut ExecutionContext,
+        a: &Tensor,
+        new_id: TensorId,
+    ) -> Result<Tensor, String>;
+
     // Layout operations
     fn reshape(
         &self,

@@ -181,6 +181,29 @@ impl Shape {
     pub fn num_elements(&self) -> usize {
         self.dims.iter().product()
     }
+
+    /// Verifica si este shape es compatible con otro para operaciones elemento a elemento.
+    /// Actualmente requiere igualdad exacta, pero sentamos la base para broadcasting.
+    pub fn is_compatible(&self, other: &Self) -> bool {
+        self.dims == other.dims
+    }
+
+    /// Comprueba si este shape puede ser broadcasted al shape objetivo.
+    /// Siguiendo reglas estilo NumPy: las dimensiones deben ser iguales o una de ellas debe ser 1.
+    pub fn can_broadcast_to(&self, target: &Self) -> bool {
+        if self.rank() > target.rank() {
+            return false;
+        }
+
+        let rank_diff = target.rank() - self.rank();
+        for (i, &dim) in self.dims.iter().enumerate() {
+            let target_dim = target.dims[i + rank_diff];
+            if dim != 1 && dim != target_dim {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 /// Tensor denso de f32 con layout row-major
@@ -371,51 +394,57 @@ impl Tensor {
             return slice.to_vec();
         }
 
-        // Slow path: manual iteration
-        // Only Rank 1 and 2 optimized here for now, generic N-dim TODO if needed
-        let mut data = Vec::with_capacity(self.len());
-        match self.shape.rank() {
+        let len = self.len();
+        let mut data = Vec::with_capacity(len);
+        let rank = self.shape.rank();
+
+        if rank == 0 {
+            if !self.data.is_empty() {
+                data.push(self.data[self.offset]);
+            }
+            return data;
+        }
+
+        // Optimized path for common ranks
+        match rank {
             1 => {
-                let len = self.shape.dims[0];
+                let dim = self.shape.dims[0];
                 let stride = self.strides[0];
-                for i in 0..len {
+                for i in 0..dim {
                     data.push(self.data[self.offset + i * stride]);
                 }
             }
             2 => {
                 let rows = self.shape.dims[0];
                 let cols = self.shape.dims[1];
+                let s0 = self.strides[0];
+                let s1 = self.strides[1];
                 for i in 0..rows {
-                    let row_base = self.offset + i * self.strides[0];
+                    let row_base = self.offset + i * s0;
                     for j in 0..cols {
-                        data.push(self.data[row_base + j * self.strides[1]]);
+                        data.push(self.data[row_base + j * s1]);
                     }
                 }
             }
             _ => {
-                // Fallback for N-dims: Use generic indexing (slow but correct)
-                // Or just return empty/error? We should probably try to be correct.
-                // Implementing generic iter is complex here without helper.
-                // Given the project scope, let's just warn or panic?
-                // Or better: Implement recursive filler.
-                // Or simpler: Flat iteration if we can map flat index to strided index?
-                // Let's implement a basic N-dim iterator
-                let mut current_indices = vec![0; self.shape.rank()];
-                for _ in 0..self.len() {
-                    // Calculate offset
-                    let mut off = self.offset;
-                    for (d, &idx) in current_indices.iter().enumerate() {
-                        off += idx * self.strides[d];
-                    }
-                    data.push(self.data[off]);
+                // Efficient N-dim traversal without re-calculating full offset every step
+                let mut current_indices = vec![0; rank];
+                let mut current_offset = self.offset;
 
-                    // Advance indices
-                    for j in (0..self.shape.rank()).rev() {
+                for _ in 0..len {
+                    data.push(self.data[current_offset]);
+
+                    // Advance indices and update offset incrementally
+                    for j in (0..rank).rev() {
                         current_indices[j] += 1;
                         if current_indices[j] < self.shape.dims[j] {
+                            current_offset += self.strides[j];
                             break;
+                        } else {
+                            // Reset dimension and adjust offset backwards
+                            current_offset -= (current_indices[j] - 1) * self.strides[j];
+                            current_indices[j] = 0;
                         }
-                        current_indices[j] = 0;
                     }
                 }
             }
@@ -424,6 +453,54 @@ impl Tensor {
     }
 }
 
+// ============================================================================
+// LAZY EVALUATION STRUCTURES
+// ============================================================================
+
+/// Representa una operación pendiente en el grafo de computación
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Expression {
+    /// Un tensor ya materializado
+    Literal(Tensor),
+    /// Suma de dos expresiones
+    Add(Box<Expression>, Box<Expression>),
+    /// Resta de dos expresiones
+    Sub(Box<Expression>, Box<Expression>),
+    /// Multiplicación elemento a elemento
+    Multiply(Box<Expression>, Box<Expression>),
+    /// División elemento a elemento
+    Divide(Box<Expression>, Box<Expression>),
+    /// Multiplicación de matrices
+    MatMul(Box<Expression>, Box<Expression>),
+    /// Multiplicación por escalar
+    ScalarMul(Box<Expression>, f32),
+    /// Normalización (L2)
+    Normalize(Box<Expression>),
+    /// Suma total
+    Sum(Box<Expression>),
+    /// Media aritmética
+    Mean(Box<Expression>),
+    /// Desviación estándar
+    Stdev(Box<Expression>),
+}
+
+/// Un tensor que aún no ha sido evaluado
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LazyTensor {
+    pub id: TensorId,
+    pub expr: Expression,
+    pub metadata: Arc<TensorMetadata>,
+}
+
+impl LazyTensor {
+    pub fn new(id: TensorId, expr: Expression, metadata: TensorMetadata) -> Self {
+        Self {
+            id,
+            expr,
+            metadata: Arc::new(metadata),
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

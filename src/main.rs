@@ -123,7 +123,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let line = raw_line.trim();
 
                 if current_cmd.is_empty() {
-                    if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+                    if line.is_empty()
+                        || line.starts_with('#')
+                        || line.starts_with("//")
+                        || line.starts_with("--")
+                    {
                         continue;
                     }
                     start_line = idx + 1;

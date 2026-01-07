@@ -8,10 +8,12 @@
 
 LINALDB is designed for developers and researchers who need the structure of a database with the mathematical power of a tensor library.
 
-- **Semantic Transformations**: Build zero-copy views using Reference Graphs.
-- **Algebraic DSL**: Perform complex matrix and vector math directly in your queries.
-- **Local-First & Portable**: Use it as an embedded library (like SQLite) or a managed server.
-- **Enterprise Ready**: High-concurrency reads (`RwLock`), asynchronous background jobs, and multi-tenant isolation.
+- **Multi-Dimensional Tensors**: Generalized N-dimensional math (Rank > 2) with efficient offset traversal.
+- **Lazy Evaluation Engine**: Define computation graphs using `LAZY LET` and materialize them on-demand via `SHOW`.
+- **Numerical Aggregations**: Native `SUM`, `MEAN`, and `STDEV` operations for powerful statistical analysis.
+- **Semantic Transformations**: Build zero-copy views using Reference Graphs and Lineage tracking.
+- **Local-First & Portable**: Use it as an embedded library (like SQLite) or a multi-tenant managed server.
+- **High Performance**: 2.5x speedup via SIMD, Rayon parallelization, and intelligent tensor pooling.
 
 ---
 
@@ -59,11 +61,13 @@ Create semantic views without duplicating data. LINALDB tracks lineage and prove
 -- Create a zero-copy alias
 BIND scores_alias TO original_scores
 
--- Attach independent tensors to a dataset
-ATTACH weights_vec TO model_ds.weights
+-- Perform statistical analysis on high-rank data
+LET total_norm = NORMALIZE sensor_3d
+LET avg_signal = MEAN total_norm
+LAZY LET trend = STDEV (sensor_3d * 1.5)
 
 -- Derive new resources with full lineage
-DERIVE normalized FROM v / 10.0
+DERIVE clean_data FROM sensor_3d[0:10, :, *]
 ```
 
 ### 3. High-Concurrency Analytics

@@ -17,6 +17,7 @@ pub enum DslOutput {
     Table(Dataset),
     TensorTable(crate::core::dataset::Dataset, Vec<String>),
     Tensor(Tensor),
+    LazyTensor(crate::core::tensor::LazyTensor),
 }
 
 use std::fmt;
@@ -78,6 +79,13 @@ impl fmt::Display for DslOutput {
                 }
                 Ok(())
             }
+            DslOutput::LazyTensor(lt) => {
+                writeln!(f, "Lazy Tensor ID: {}", lt.id.0)?;
+                writeln!(f, "Created: {}", lt.metadata.created_at)?;
+                writeln!(f, "Expression: {:?}", lt.expr)?;
+                writeln!(f, "Status: PENDING EVALUATION")?;
+                Ok(())
+            }
         }
     }
 }
@@ -93,7 +101,11 @@ pub fn execute_script(db: &mut TensorDb, script: &str) -> Result<(), DslError> {
 
         // Ignorar vacío y comentarios IF we are not inside a command
         if current_cmd.is_empty() {
-            if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+            if line.is_empty()
+                || line.starts_with('#')
+                || line.starts_with("//")
+                || line.starts_with("--")
+            {
                 continue;
             }
             start_line = idx + 1;
@@ -148,10 +160,7 @@ pub fn execute_line(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Dsl
 /// Check if a command is read-only
 pub fn is_read_only(line: &str) -> bool {
     let line = line.trim();
-    line.starts_with("SHOW ")
-        || line.starts_with("EXPLAIN ")
-        || line.starts_with("AUDIT ")
-        || line.starts_with("LIST ")
+    line.starts_with("EXPLAIN ") || line.starts_with("AUDIT ") || line.starts_with("LIST ")
 }
 
 /// Execute a single DSL line with an immutable reference to the DB (Shared access)
@@ -161,7 +170,14 @@ pub fn execute_line_shared(
     line_no: usize,
 ) -> Result<DslOutput, DslError> {
     if line.starts_with("SHOW ") {
-        handle_show(db, line, line_no)
+        // We need a hack here because execute_line_shared takes &db
+        // but SHOW might need &mut db for lazy evaluation.
+        // For now, we'll mark SHOW as NOT read-only if we want automatic materialization.
+        Err(DslError::Parse {
+            line: line_no,
+            msg: "SHOW requires mutable access for lazy evaluation. Use execute_line_with_context."
+                .into(),
+        })
     } else if line.starts_with("EXPLAIN ") {
         handlers::explain::handle_explain(db, line, line_no)
     } else if line.starts_with("AUDIT ") {
@@ -192,7 +208,7 @@ pub fn execute_line_with_context(
         handlers::tensor::handle_vector(db, line, line_no)
     } else if line.starts_with("MATRIX ") {
         handlers::tensor::handle_matrix(db, line, line_no)
-    } else if line.starts_with("LET ") {
+    } else if line.starts_with("LET ") || line.starts_with("LAZY LET ") {
         handle_let(db, line, line_no, ctx)
     } else if line.starts_with("SHOW ") {
         handle_show(db, line, line_no)

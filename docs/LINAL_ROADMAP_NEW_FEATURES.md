@@ -131,44 +131,33 @@ Each phase builds on top of the existing codebase and preserves backward compati
 
 ### Retrocompatibility
 
-- [ ] Embedded mode remains default
-- [ ] No server requirement for local usage
+- [x] Embedded mode remains default
+- [x] No server requirement for local usage
 
 ---
 
-## 🔵 Phase 4 — Advanced Tensor & Analytical Capabilities (OPTIONAL)
+## 🔵 Phase 4 — Advanced Tensor & Analytical Capabilities [DONE]
 
 **Goal:** Extend mathematical expressiveness without bloating the core.
 
 ### Tensor Operations
 
-- [ ] Higher-order tensor support
-- [ ] Optimized linear algebra primitives
-- [ ] Explicit shape and dimension validation
-- [ ] Lazy vs eager evaluation strategies
+- [x] N-dimensional tensor support (Rank > 2)
+- [x] Optimized linear algebra primitives
+- [x] Explicit shape and dimension validation
+- [x] Lazy vs eager evaluation strategies (LAZY LET)
 
 ### Analytical Extensions
 
-- [ ] Feature engineering primitives
-- [ ] Statistical transformations
-- [ ] Optional integration points (not dependencies)
-
-### Guardrails
-
-- [ ] No math feature enters core without clear use-case
-- [ ] All advanced features live behind extension boundaries
-
----
-
-## 🔴 Explicit Non-Goals (FOR NOW)
-
-- [ ] Distributed cluster execution
-- [ ] Full SQL compatibility
-- [ ] ML model training framework
-- [ ] Visualization/UI tools
-- [ ] Automatic cloud integration
-
-These may be revisited only with real user demand.
+- [x] Feature engineering primitives
+  - `SCALE` / `NORMALIZE` (Standardization)
+  - `RESHAPE` / `FLATTEN` (Topology)
+  - `STACK` / `SLICE` (Composition)
+- [x] Statistical transformations
+  - `CORRELATE` (Dot product)
+  - `SIMILARITY` (Cosine)
+  - `DISTANCE` (L2/Euclidean)
+- [x] Statistical aggregations (`SUM`, `MEAN`, `STDEV`)
 
 ---
 

@@ -79,6 +79,9 @@ LINAL provides two ways to perform math: Functional keywords and Infix operators
 - `NORMALIZE a`: Scales vector to unit length (L2 norm).
 - `SCALE a BY n`: Multiplies all elements by a scalar `n`.
 - `STACK t1 t2 ...`: Combines tensors along Axis 0.
+- `SUM a`: Sum of all elements in the tensor.
+- `MEAN a`: Arithmetic mean of all elements.
+- `STDEV a`: Standard deviation of all elements.
 
 ### Infix Operators
 

@@ -14,6 +14,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] Python/WASM integration
 - [ ] Native ML operators (KNN, clustering, PCA)
 
+## [0.1.12] - 2026-01-06
+
+### Added - Phase 12: Advanced Tensor & Analytical Capabilities
+
+- **N-Dimensional Tensor Support**
+  - Generalized core kernels (add, multiply, scale, flatten) to support arbitrary rank (Rank > 2).
+  - Optimized incremental offset traversal for high-dimensional tensor math.
+  - Integration tests for Rank-3 and Rank-4 tensors.
+- **Lazy Evaluation Engine**
+  - Computation Graph abstraction (`Expression` and `LazyTensor`).
+  - `LAZY LET` command for deferred compute definitions.
+  - Transparent materialization via `SHOW` command (automatic graph evaluation).
+  - Support for mutable `SHOW` in server context for on-demand evaluation.
+
+### Added - Phase 14: Statistical Aggregations
+
+- **Numerical Aggregation Primitives**
+  - `SUM`: Optimized reduction across all dimensions.
+  - `MEAN`: Arithmetic average calculation for tensors of any rank.
+  - `STDEV`: Population standard deviation implementation.
+- **Improved Analytical DSL**
+  - New keywords: `SUM`, `MEAN`, `STDEV`, `NORMALIZE`, `SCALE`, `RESHAPE`, `FLATTEN`, `STACK`.
+  - Statistical transformation keywords: `CORRELATE`, `SIMILARITY`, `DISTANCE`.
+  - Full support for indexing syntax (`v[0:10]`, `m[0, *]`).
+
+### Improved
+
+- Centralized shape validation and error reporting.
+- Enhanced `DslOutput` with metadata for lazy tensors.
+
 ## [0.1.11] - 2026-01-05
 
 ### Added - Phase 3: Server Concurrency & Async Jobs

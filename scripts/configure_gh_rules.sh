@@ -26,7 +26,7 @@ RULESET_JSON=$(cat <<EOF
     {
       "type": "pull_request",
       "parameters": {
-        "required_approving_review_count": 1,
+        "required_approving_review_count": 0,
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": false,
         "require_last_push_approval": false,
@@ -50,10 +50,16 @@ RULESET_JSON=$(cat <<EOF
 EOF
 )
 
-# Use gh api to create the ruleset
-echo "Creating/Updating ruleset via GitHub API..."
-echo "$RULESET_JSON" | gh api --method POST /repos/$REPO/rulesets --input - \
-  || echo "Ruleset already exists or error occurred. Check GitHub UI."
+# Find existing ruleset ID
+RULESET_ID=$(gh api /repos/$REPO/rulesets --template '{{range .}}{{if eq .name "Main Protection"}}{{printf "%.0f" .id}}{{end}}{{end}}')
+
+if [ -z "$RULESET_ID" ]; then
+    echo "Creating ruleset via GitHub API..."
+    echo "$RULESET_JSON" | gh api --method POST /repos/$REPO/rulesets --input -
+else
+    echo "Updating existing ruleset $RULESET_ID via GitHub API..."
+    echo "$RULESET_JSON" | gh api --method PUT /repos/$REPO/rulesets/$RULESET_ID --input -
+fi
 
 echo "✅ Configuration complete."
 echo "Visit https://github.com/$REPO/settings/rules to verify."

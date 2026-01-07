@@ -83,10 +83,31 @@ fn elementwise_binary_op_infallible_with_timestamp(
                     }
                 }
                 _ => {
-                    return Err(format!(
-                        "Strided operations not optimized for rank {}",
-                        a.shape.rank()
-                    ));
+                    // Efficient N-dim traversal for matching shapes
+                    let rank = a.shape.rank();
+                    let mut current_indices = vec![0; rank];
+                    let mut a_off = a.offset;
+                    let mut b_off = b.offset;
+                    let a_data = a.data_ref();
+                    let b_data = b.data_ref();
+
+                    for _ in 0..len {
+                        data.push(op(a_data[a_off], b_data[b_off]));
+
+                        // Advance indices and update offsets incrementally
+                        for j in (0..rank).rev() {
+                            current_indices[j] += 1;
+                            if current_indices[j] < a.shape.dims[j] {
+                                a_off += a.strides[j];
+                                b_off += b.strides[j];
+                                break;
+                            } else {
+                                a_off -= (current_indices[j] - 1) * a.strides[j];
+                                b_off -= (current_indices[j] - 1) * b.strides[j];
+                                current_indices[j] = 0;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -162,10 +183,31 @@ fn elementwise_binary_op_with_timestamp(
                     }
                 }
                 _ => {
-                    return Err(format!(
-                        "Strided ops not optimized for rank {}",
-                        a.shape.rank()
-                    ))
+                    // Efficient N-dim traversal for matching shapes (fallible)
+                    let rank = a.shape.rank();
+                    let mut current_indices = vec![0; rank];
+                    let mut a_off = a.offset;
+                    let mut b_off = b.offset;
+                    let a_data = a.data_ref();
+                    let b_data = b.data_ref();
+
+                    for _ in 0..len {
+                        data.push(op(a_data[a_off], b_data[b_off])?);
+
+                        // Advance indices and update offsets incrementally
+                        for j in (0..rank).rev() {
+                            current_indices[j] += 1;
+                            if current_indices[j] < a.shape.dims[j] {
+                                a_off += a.strides[j];
+                                b_off += b.strides[j];
+                                break;
+                            } else {
+                                a_off -= (current_indices[j] - 1) * a.strides[j];
+                                b_off -= (current_indices[j] - 1) * b.strides[j];
+                                current_indices[j] = 0;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -206,7 +248,28 @@ fn elementwise_binary_op_with_timestamp(
                             }
                         }
                     }
-                    _ => return Err("Strided broadcast not supported for high rank".into()),
+                    _ => {
+                        // Generalized strided broadcast for scalars
+                        let rank = b.shape.rank();
+                        let mut current_indices = vec![0; rank];
+                        let mut b_off = b.offset;
+                        let b_data = b.data_ref();
+
+                        for _ in 0..b.shape.num_elements() {
+                            data.push(op(scalar, b_data[b_off])?);
+
+                            for j in (0..rank).rev() {
+                                current_indices[j] += 1;
+                                if current_indices[j] < b.shape.dims[j] {
+                                    b_off += b.strides[j];
+                                    break;
+                                } else {
+                                    b_off -= (current_indices[j] - 1) * b.strides[j];
+                                    current_indices[j] = 0;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
@@ -240,7 +303,28 @@ fn elementwise_binary_op_with_timestamp(
                             }
                         }
                     }
-                    _ => return Err("Strided broadcast not supported".into()),
+                    _ => {
+                        // Generalized strided broadcast for scalars (scalar on right)
+                        let rank = a.shape.rank();
+                        let mut current_indices = vec![0; rank];
+                        let mut a_off = a.offset;
+                        let a_data = a.data_ref();
+
+                        for _ in 0..a.shape.num_elements() {
+                            data.push(op(a_data[a_off], scalar)?);
+
+                            for j in (0..rank).rev() {
+                                current_indices[j] += 1;
+                                if current_indices[j] < a.shape.dims[j] {
+                                    a_off += a.strides[j];
+                                    break;
+                                } else {
+                                    a_off -= (current_indices[j] - 1) * a.strides[j];
+                                    current_indices[j] = 0;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
@@ -286,10 +370,41 @@ fn elementwise_binary_op_with_timestamp(
     }
 }
 
-/// Verifica que dos shapes sean iguales
+/// Verifica que dos shapes sean exactamente iguales
 fn ensure_same_shape(a: &Shape, b: &Shape) -> Result<(), String> {
     if a.dims != b.dims {
-        Err(format!("Shape mismatch: {:?} vs {:?}", a.dims, b.dims))
+        Err(format!(
+            "Shape mismatch: requested operation requires identical shapes, but got {:?} vs {:?}",
+            a.dims, b.dims
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Verifica que dos tensores sean vectores (rank 1)
+fn ensure_rank_1(a: &Tensor, name: &str) -> Result<(), String> {
+    if a.shape.rank() != 1 {
+        Err(format!(
+            "Dimension error: {} expects a rank-1 tensor (vector), but got rank-{} with shape {:?}",
+            name,
+            a.shape.rank(),
+            a.shape.dims
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Verifica que dos tensores sean matrices (rank 2)
+fn ensure_rank_2(a: &Tensor, name: &str) -> Result<(), String> {
+    if a.shape.rank() != 2 {
+        Err(format!(
+            "Dimension error: {} expects a rank-2 tensor (matrix), but got rank-{} with shape {:?}",
+            name,
+            a.shape.rank(),
+            a.shape.dims
+        ))
     } else {
         Ok(())
     }
@@ -409,10 +524,26 @@ pub fn scalar_mul_with_timestamp(
                 }
             }
             _ => {
-                return Err(format!(
-                    "Strided scalar_mul not optimized for rank {}",
-                    a.shape.rank()
-                ));
+                // Generalized strided scalar_mul
+                let rank = a.shape.rank();
+                let mut current_indices = vec![0; rank];
+                let mut a_off = a.offset;
+                let a_data = a.data_ref();
+
+                for _ in 0..a.shape.num_elements() {
+                    data.push(s * a_data[a_off]);
+
+                    for j in (0..rank).rev() {
+                        current_indices[j] += 1;
+                        if current_indices[j] < a.shape.dims[j] {
+                            a_off += a.strides[j];
+                            break;
+                        } else {
+                            a_off -= (current_indices[j] - 1) * a.strides[j];
+                            current_indices[j] = 0;
+                        }
+                    }
+                }
             }
         }
     }
@@ -422,9 +553,8 @@ pub fn scalar_mul_with_timestamp(
 
 /// Producto punto entre dos tensores rank-1 (vectores)
 pub fn dot_1d(a: &Tensor, b: &Tensor) -> Result<f32, String> {
-    if a.shape.rank() != 1 || b.shape.rank() != 1 {
-        return Err("dot_1d expects rank-1 tensors".into());
-    }
+    ensure_rank_1(a, "dot_1d")?;
+    ensure_rank_1(b, "dot_1d")?;
     ensure_same_shape(&a.shape, &b.shape)?;
 
     let sum = a
@@ -437,12 +567,9 @@ pub fn dot_1d(a: &Tensor, b: &Tensor) -> Result<f32, String> {
     Ok(sum)
 }
 
-/// Norma L2 de un tensor rank-1
+/// L2 Norm of a tensor (any rank)
 pub fn l2_norm_1d(a: &Tensor) -> Result<f32, String> {
-    if a.shape.rank() != 1 {
-        return Err("l2_norm_1d expects rank-1 tensor".into());
-    }
-
+    // Treat as a flat vector of elements
     Ok(a.data_ref().iter().map(|x| x * x).sum::<f32>().sqrt())
 }
 
@@ -479,6 +606,125 @@ pub fn cosine_similarity_1d(a: &Tensor, b: &Tensor) -> Result<f32, String> {
     Ok(dot_ab / (norm_a * norm_b))
 }
 
+/// Sum of all elements in a tensor
+pub fn sum(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    sum_with_timestamp(a, new_id, chrono::Utc::now())
+}
+
+pub fn sum_with_timestamp(
+    a: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    let s: f32 = if let Some(slice) = a.as_contiguous_slice() {
+        slice.iter().sum()
+    } else {
+        let mut total = 0.0;
+        let a_data = a.data_ref();
+        let len = a.shape.num_elements();
+        let rank = a.shape.rank();
+
+        if rank == 1 {
+            let stride = a.strides[0];
+            for i in 0..len {
+                total += a_data[a.offset + i * stride];
+            }
+        } else {
+            let mut current_indices = vec![0; rank];
+            let mut a_off = a.offset;
+            for _ in 0..len {
+                total += a_data[a_off];
+                for j in (0..rank).rev() {
+                    current_indices[j] += 1;
+                    if current_indices[j] < a.shape.dims[j] {
+                        a_off += a.strides[j];
+                        break;
+                    } else {
+                        a_off -= (current_indices[j] - 1) * a.strides[j];
+                        current_indices[j] = 0;
+                    }
+                }
+            }
+        }
+        total
+    };
+
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
+    Tensor::new(new_id, Shape::new(vec![1]), vec![s], metadata)
+}
+
+/// Mean of all elements in a tensor
+pub fn mean(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    mean_with_timestamp(a, new_id, chrono::Utc::now())
+}
+
+pub fn mean_with_timestamp(
+    a: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    let total_elements = a.shape.num_elements() as f32;
+    if total_elements == 0.0 {
+        return Err("Cannot compute mean of empty tensor".into());
+    }
+
+    let s_tensor = sum_with_timestamp(a, TensorId::new(), timestamp)?;
+    let m = s_tensor.data_ref()[0] / total_elements;
+
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
+    Tensor::new(new_id, Shape::new(vec![1]), vec![m], metadata)
+}
+
+/// Standard deviation of all elements in a tensor
+pub fn stdev(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
+    stdev_with_timestamp(a, new_id, chrono::Utc::now())
+}
+
+pub fn stdev_with_timestamp(
+    a: &Tensor,
+    new_id: TensorId,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    let total_elements = a.shape.num_elements() as f32;
+    if total_elements == 0.0 {
+        return Err("Cannot compute stdev of empty tensor".into());
+    }
+
+    let mean_val = mean_with_timestamp(a, TensorId::new(), timestamp)?.data_ref()[0];
+
+    let sq_diff_sum: f32 = if let Some(slice) = a.as_contiguous_slice() {
+        slice.iter().map(|&x| (x - mean_val).powi(2)).sum()
+    } else {
+        let mut total = 0.0;
+        let a_data = a.data_ref();
+        let len = a.shape.num_elements();
+        let rank = a.shape.rank();
+
+        let mut current_indices = vec![0; rank];
+        let mut a_off = a.offset;
+        for _ in 0..len {
+            total += (a_data[a_off] - mean_val).powi(2);
+            for j in (0..rank).rev() {
+                current_indices[j] += 1;
+                if current_indices[j] < a.shape.dims[j] {
+                    a_off += a.strides[j];
+                    break;
+                } else {
+                    a_off -= (current_indices[j] - 1) * a.strides[j];
+                    current_indices[j] = 0;
+                }
+            }
+        }
+        total
+    };
+
+    let variance = sq_diff_sum / total_elements;
+    let stdev = variance.sqrt();
+
+    let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
+    Tensor::new(new_id, Shape::new(vec![1]), vec![stdev], metadata)
+}
+
 /// Normaliza un tensor rank-1 a norma 1 (L2)
 pub fn normalize_1d(a: &Tensor, new_id: TensorId) -> Result<Tensor, String> {
     normalize_1d_with_timestamp(a, new_id, chrono::Utc::now())
@@ -491,7 +737,7 @@ pub fn normalize_1d_with_timestamp(
 ) -> Result<Tensor, String> {
     let norm = l2_norm_1d(a)?;
     if norm == 0.0 {
-        return Err("Cannot normalize a zero vector".into());
+        return Err("Cannot normalize a zero tensor".into());
     }
     let factor = 1.0 / norm;
     scalar_mul_with_timestamp(a, factor, new_id, timestamp)
@@ -569,9 +815,8 @@ pub fn matmul_with_timestamp(
     new_id: TensorId,
     timestamp: chrono::DateTime<chrono::Utc>,
 ) -> Result<Tensor, String> {
-    if a.shape.rank() != 2 || b.shape.rank() != 2 {
-        return Err("matmul expects rank-2 tensors (matrices)".into());
-    }
+    ensure_rank_2(a, "matmul")?;
+    ensure_rank_2(b, "matmul")?;
 
     let m = a.shape.dims[0];
     let n = a.shape.dims[1];
@@ -580,8 +825,8 @@ pub fn matmul_with_timestamp(
 
     if n != n2 {
         return Err(format!(
-            "Matrix dimension mismatch: A is [{}x{}], B is [{}x{}]. Inner dimensions must match.",
-            m, n, n2, p
+            "Matrix dimension mismatch in matmul: A is [{}x{}], B is [{}x{}]. Inner dimensions ({} vs {}) must match.",
+            m, n, n2, p, n, n2
         ));
     }
 
@@ -749,12 +994,26 @@ pub fn flatten_with_timestamp(
                 }
             }
             _ => {
-                // Fallback for N-dims (TODO: implement generic strided iterator)
-                // For now, support rank 2 (matrix) which is the most common case for transpose/flatten
-                return Err(
-                    "Flatten only optimized for contiguous or rank-2 strided tensors currently"
-                        .into(),
-                );
+                // Generalized N-dims materialization for flatten
+                let rank = a.shape.rank();
+                let mut current_indices = vec![0; rank];
+                let mut a_off = a.offset;
+                let a_data = a.data_ref();
+
+                for _ in 0..total_elements {
+                    collected.push(a_data[a_off]);
+
+                    for j in (0..rank).rev() {
+                        current_indices[j] += 1;
+                        if current_indices[j] < a.shape.dims[j] {
+                            a_off += a.strides[j];
+                            break;
+                        } else {
+                            a_off -= (current_indices[j] - 1) * a.strides[j];
+                            current_indices[j] = 0;
+                        }
+                    }
+                }
             }
         }
         collected
@@ -1049,6 +1308,68 @@ pub fn stack_with_timestamp(
     let new_shape = Shape::new(new_dims);
     let metadata = TensorMetadata::new_with_timestamp(new_id, None, timestamp);
     Tensor::new(new_id, new_shape, new_data, metadata)
+}
+
+// ============================================================================
+// LAZY EVALUATION ENGINE
+// ============================================================================
+
+use crate::core::tensor::Expression;
+
+/// Evalúa recursivamente una expresión para producir un Tensor materializado.
+/// Este es el núcleo del sistema de evaluación perezosa de LINAL.
+pub fn evaluate_expression(
+    expr: &Expression,
+    timestamp: chrono::DateTime<chrono::Utc>,
+) -> Result<Tensor, String> {
+    match expr {
+        Expression::Literal(t) => Ok(t.clone()),
+        Expression::Add(left, right) => {
+            let lt = evaluate_expression(left, timestamp)?;
+            let rt = evaluate_expression(right, timestamp)?;
+            add_with_timestamp(&lt, &rt, TensorId::new(), timestamp)
+        }
+        Expression::Sub(left, right) => {
+            let lt = evaluate_expression(left, timestamp)?;
+            let rt = evaluate_expression(right, timestamp)?;
+            sub_with_timestamp(&lt, &rt, TensorId::new(), timestamp)
+        }
+        Expression::Multiply(left, right) => {
+            let lt = evaluate_expression(left, timestamp)?;
+            let rt = evaluate_expression(right, timestamp)?;
+            multiply_with_timestamp(&lt, &rt, TensorId::new(), timestamp)
+        }
+        Expression::MatMul(left, right) => {
+            let lt = evaluate_expression(left, timestamp)?;
+            let rt = evaluate_expression(right, timestamp)?;
+            matmul_with_timestamp(&lt, &rt, TensorId::new(), timestamp)
+        }
+        Expression::ScalarMul(inner, s) => {
+            let t = evaluate_expression(inner, timestamp)?;
+            scalar_mul_with_timestamp(&t, *s, TensorId::new(), timestamp)
+        }
+        Expression::Divide(left, right) => {
+            let lt = evaluate_expression(left, timestamp)?;
+            let rt = evaluate_expression(right, timestamp)?;
+            divide_with_timestamp(&lt, &rt, TensorId::new(), timestamp)
+        }
+        Expression::Normalize(inner) => {
+            let t = evaluate_expression(inner, timestamp)?;
+            normalize_1d_with_timestamp(&t, TensorId::new(), timestamp)
+        }
+        Expression::Sum(inner) => {
+            let t = evaluate_expression(inner, timestamp)?;
+            sum_with_timestamp(&t, TensorId::new(), timestamp)
+        }
+        Expression::Mean(inner) => {
+            let t = evaluate_expression(inner, timestamp)?;
+            mean_with_timestamp(&t, TensorId::new(), timestamp)
+        }
+        Expression::Stdev(inner) => {
+            let t = evaluate_expression(inner, timestamp)?;
+            stdev_with_timestamp(&t, TensorId::new(), timestamp)
+        }
+    }
 }
 
 #[cfg(test)]

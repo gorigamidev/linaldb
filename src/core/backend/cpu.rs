@@ -168,6 +168,33 @@ impl ComputeBackend for CpuBackend {
         self.scalar.flatten(ctx, a, new_id)
     }
 
+    fn sum(
+        &self,
+        ctx: &mut ExecutionContext,
+        a: &Tensor,
+        new_id: TensorId,
+    ) -> Result<Tensor, String> {
+        self.scalar.sum(ctx, a, new_id)
+    }
+
+    fn mean(
+        &self,
+        ctx: &mut ExecutionContext,
+        a: &Tensor,
+        new_id: TensorId,
+    ) -> Result<Tensor, String> {
+        self.scalar.mean(ctx, a, new_id)
+    }
+
+    fn stdev(
+        &self,
+        ctx: &mut ExecutionContext,
+        a: &Tensor,
+        new_id: TensorId,
+    ) -> Result<Tensor, String> {
+        self.scalar.stdev(ctx, a, new_id)
+    }
+
     fn reshape(
         &self,
         ctx: &mut ExecutionContext,

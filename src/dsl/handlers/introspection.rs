@@ -5,7 +5,7 @@ use crate::engine::TensorDb;
 /// SHOW x
 /// SHOW ALL
 /// SHOW ALL DATASETS
-pub fn handle_show(db: &TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+pub fn handle_show(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
     let rest = line.trim_start_matches("SHOW").trim();
 
     if rest == "ALL" || rest == "ALL TENSORS" {
@@ -308,7 +308,8 @@ pub fn handle_show(db: &TensorDb, line: &str, line_no: usize) -> Result<DslOutpu
             return Ok(DslOutput::Message(content.to_string()));
         }
 
-        // Check if it's a tensor
+        // Check if it's a tensor (materializing if lazy)
+        let _ = db.evaluate(name);
         if let Ok(t) = db.get(name) {
             return Ok(DslOutput::Tensor(t.clone()));
         }

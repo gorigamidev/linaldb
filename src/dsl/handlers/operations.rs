@@ -12,6 +12,7 @@ pub fn handle_let(
     line_no: usize,
     ctx: Option<&mut ExecutionContext>,
 ) -> Result<DslOutput, DslError> {
+    let is_lazy = line.starts_with("LET LAZY ") || line.starts_with("LAZY LET ");
     // If no context provided, create a transient one
     let mut local_ctx;
     let ctx = match ctx {
@@ -22,8 +23,14 @@ pub fn handle_let(
         }
     };
 
-    // Quitamos LET
-    let rest = line.trim_start_matches("LET").trim();
+    // Quitamos LET o LAZY LET
+    let rest = if line.starts_with("LAZY LET ") {
+        line.strip_prefix("LAZY LET ").unwrap().trim()
+    } else if line.starts_with("LET LAZY ") {
+        line.strip_prefix("LET LAZY ").unwrap().trim()
+    } else {
+        line.strip_prefix("LET ").unwrap().trim()
+    };
     // ... (rest of function body until return) ...
     // Note: I can't replace the signature and return in one go easily if body is long.
     // I will replace valid chunks.
@@ -74,6 +81,9 @@ pub fn handle_let(
             | "SCALE"
             | "NORMALIZE"
             | "FLATTEN"
+            | "SUM"
+            | "MEAN"
+            | "STDEV"
     );
 
     if !is_keyword {
@@ -122,11 +132,15 @@ pub fn handle_let(
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_binary(ctx, output_name, left, right, BinaryOp::Add)
-                .map_err(|e| DslError::Engine {
-                    line: line_no,
-                    source: e,
-                })
+            let res = if is_lazy {
+                db.eval_lazy_binary(ctx, output_name, left, right, BinaryOp::Add)
+            } else {
+                db.eval_binary(ctx, output_name, left, right, BinaryOp::Add)
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
         }
         "SUBTRACT" => {
             if tokens.len() != 3 {
@@ -137,11 +151,15 @@ pub fn handle_let(
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_binary(ctx, output_name, left, right, BinaryOp::Subtract)
-                .map_err(|e| DslError::Engine {
-                    line: line_no,
-                    source: e,
-                })
+            let res = if is_lazy {
+                db.eval_lazy_binary(ctx, output_name, left, right, BinaryOp::Subtract)
+            } else {
+                db.eval_binary(ctx, output_name, left, right, BinaryOp::Subtract)
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
         }
         "MULTIPLY" => {
             if tokens.len() != 3 {
@@ -152,11 +170,15 @@ pub fn handle_let(
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_binary(ctx, output_name, left, right, BinaryOp::Multiply)
-                .map_err(|e| DslError::Engine {
-                    line: line_no,
-                    source: e,
-                })
+            let res = if is_lazy {
+                db.eval_lazy_binary(ctx, output_name, left, right, BinaryOp::Multiply)
+            } else {
+                db.eval_binary(ctx, output_name, left, right, BinaryOp::Multiply)
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
         }
         "DIVIDE" => {
             if tokens.len() != 3 {
@@ -167,11 +189,15 @@ pub fn handle_let(
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_binary(ctx, output_name, left, right, BinaryOp::Divide)
-                .map_err(|e| DslError::Engine {
-                    line: line_no,
-                    source: e,
-                })
+            let res = if is_lazy {
+                db.eval_lazy_binary(ctx, output_name, left, right, BinaryOp::Divide)
+            } else {
+                db.eval_binary(ctx, output_name, left, right, BinaryOp::Divide)
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
         }
         "CORRELATE" => {
             // CORRELATE a WITH b
@@ -234,11 +260,15 @@ pub fn handle_let(
                 line: line_no,
                 msg: format!("Invalid scale factor: {}", tokens[3]),
             })?;
-            db.eval_unary(ctx, output_name, input_name, UnaryOp::Scale(factor))
-                .map_err(|e| DslError::Engine {
-                    line: line_no,
-                    source: e,
-                })
+            let res = if is_lazy {
+                db.eval_lazy_unary(ctx, output_name, input_name, UnaryOp::Scale(factor))
+            } else {
+                db.eval_unary(ctx, output_name, input_name, UnaryOp::Scale(factor))
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
         }
         "NORMALIZE" => {
             // NORMALIZE a
@@ -249,11 +279,15 @@ pub fn handle_let(
                 });
             }
             let input_name = tokens[1];
-            db.eval_unary(ctx, output_name, input_name, UnaryOp::Normalize)
-                .map_err(|e| DslError::Engine {
-                    line: line_no,
-                    source: e,
-                })
+            let res = if is_lazy {
+                db.eval_lazy_unary(ctx, output_name, input_name, UnaryOp::Normalize)
+            } else {
+                db.eval_unary(ctx, output_name, input_name, UnaryOp::Normalize)
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
         }
         "MATMUL" => {
             // MATMUL a b
@@ -265,11 +299,15 @@ pub fn handle_let(
             }
             let left = tokens[1];
             let right = tokens[2];
-            db.eval_matmul(ctx, output_name, left, right)
-                .map_err(|e| DslError::Engine {
-                    line: line_no,
-                    source: e,
-                })
+            let res = if is_lazy {
+                db.eval_lazy_matmul(ctx, output_name, left, right)
+            } else {
+                db.eval_matmul(ctx, output_name, left, right)
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
         }
         "RESHAPE" => {
             // RESHAPE a TO [2, 3]
@@ -348,6 +386,60 @@ pub fn handle_let(
                     source: e,
                 })
         }
+        "SUM" => {
+            if tokens.len() != 2 {
+                return Err(DslError::Parse {
+                    line: line_no,
+                    msg: "Expected: LET x = SUM a".into(),
+                });
+            }
+            let input_name = tokens[1];
+            let res = if is_lazy {
+                db.eval_lazy_unary(ctx, output_name, input_name, UnaryOp::Sum)
+            } else {
+                db.eval_unary(ctx, output_name, input_name, UnaryOp::Sum)
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
+        }
+        "MEAN" => {
+            if tokens.len() != 2 {
+                return Err(DslError::Parse {
+                    line: line_no,
+                    msg: "Expected: LET x = MEAN a".into(),
+                });
+            }
+            let input_name = tokens[1];
+            let res = if is_lazy {
+                db.eval_lazy_unary(ctx, output_name, input_name, UnaryOp::Mean)
+            } else {
+                db.eval_unary(ctx, output_name, input_name, UnaryOp::Mean)
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
+        }
+        "STDEV" => {
+            if tokens.len() != 2 {
+                return Err(DslError::Parse {
+                    line: line_no,
+                    msg: "Expected: LET x = STDEV a".into(),
+                });
+            }
+            let input_name = tokens[1];
+            let res = if is_lazy {
+                db.eval_lazy_unary(ctx, output_name, input_name, UnaryOp::Stdev)
+            } else {
+                db.eval_unary(ctx, output_name, input_name, UnaryOp::Stdev)
+            };
+            res.map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })
+        }
         "STACK" => {
             // LET x = STACK a b c ...
             if tokens.len() < 3 {
@@ -369,7 +461,13 @@ pub fn handle_let(
             msg: format!("Unknown LET operation: {}", other),
         }),
     }
-    .map(|_| DslOutput::Message(format!("Defined variable: {}", output_name)))
+    .map(|_| {
+        if is_lazy {
+            DslOutput::Message(format!("Defined lazy variable: {}", output_name))
+        } else {
+            DslOutput::Message(format!("Defined variable: {}", output_name))
+        }
+    })
 }
 
 /// Handle indexing expressions: name[i, j, ...] or name[i:j, *]

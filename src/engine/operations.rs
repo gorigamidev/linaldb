@@ -45,6 +45,12 @@ pub enum UnaryOp {
     Transpose,
     /// FLATTEN a (flatten to 1D)
     Flatten,
+    /// SUM a (sum of all elements)
+    Sum,
+    /// MEAN a (average of all elements)
+    Mean,
+    /// STDEV a (standard deviation)
+    Stdev,
 }
 
 impl fmt::Display for UnaryOp {
@@ -54,6 +60,9 @@ impl fmt::Display for UnaryOp {
             UnaryOp::Normalize => write!(f, "NORMALIZE"),
             UnaryOp::Transpose => write!(f, "TRANSPOSE"),
             UnaryOp::Flatten => write!(f, "FLATTEN"),
+            UnaryOp::Sum => write!(f, "SUM"),
+            UnaryOp::Mean => write!(f, "MEAN"),
+            UnaryOp::Stdev => write!(f, "STDEV"),
         }
     }
 }
@@ -64,4 +73,6 @@ pub enum TensorKind {
     Normal,
     /// Comportamiento estricto (shapes deben coincidir para element-wise)
     Strict,
+    /// Tensor perezoso (almacena una expresión)
+    Lazy,
 }
