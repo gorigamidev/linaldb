@@ -136,11 +136,23 @@ LIMIT 10
 
 Load and save data across different formats.
 
-- `IMPORT CSV FROM "path" AS name`: Auto-infer schema and load CSV.
+- `USE DATASET FROM "path" [AS name]`: Load external data (CSV, HDF5, Numpy, Zarr) into the current session as ephemeral tensors and a dataset view.
+  - Automatically detects format from file extension (`.csv`, `.h5`, `.npy`, `.npz`, `.zarr`).
+- `IMPORT DATASET FROM "path" [AS name]`: Load and normalize external data into a persistent LINAL Dataset Package.
+  - Supports CSV, HDF5, Numpy, and Zarr.
+- `IMPORT CSV FROM "path" AS name`: (Legacy) Auto-infer schema and load CSV into a relational dataset.
 - `EXPORT CSV name TO "path"`: Save dataset to CSV.
 - `SAVE DATASET name [TO "path"]`: Persist to Parquet (includes metadata/lineage).
 - `LOAD DATASET name [FROM "path"]`: Restore a persisted dataset.
 - `LIST DATASETS`: Show available datasets in the current database context.
+
+### Scientific Data Ingestion
+
+LINAL supports direct ingestion of multi-dimensional data:
+
+- **HDF5**: Ingests datasets from groups; flattens them into columns.
+- **Numpy**: Supports `.npy` (single vector/matrix) and `.npz` (named collections).
+- **Zarr**: Supports V3 Zarr stores with recursive group traversal.
 
 ---
 

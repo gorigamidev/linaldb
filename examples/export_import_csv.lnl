@@ -5,9 +5,13 @@
 CREATE DATABASE phase1_test
 USE phase1_test
 
-// 1. Import from CSV
+// 1. Import from CSV (Legacy)
 // The engine should infer id:Int, name:String, value:Float, active:Bool
 IMPORT CSV FROM "./data/sample_data.csv" AS frameworks
+
+// 1a. Scientific Ingestion (New)
+// Loads into ephemeral tensors and registers a dataset view
+USE DATASET FROM "./data/sample_data.csv" AS frameworks_fast
 
 // 2. Show registered datasets
 SHOW ALL DATASETS

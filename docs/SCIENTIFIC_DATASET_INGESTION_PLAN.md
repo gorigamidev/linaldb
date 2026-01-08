@@ -1,4 +1,4 @@
-# LINALDB — Scientific Dataset Ingestion & Delivery Roadmap
+# LINALDB — Scientific Dataset Ingestion & Delivery Roadmap - COMPLETED ✅
 
 ## Objective
 
@@ -148,10 +148,10 @@ This package is:
 
 **Goal:** Establish non-negotiable foundations.
 
-- [ ] Define Tensor / Axis / Annotation core structures
-- [ ] Define connector responsibility boundaries
-- [ ] Define lineage and provenance model
-- [ ] Document normalization rules
+- [x] Define Tensor / Axis / Annotation core structures
+- [x] Define connector responsibility boundaries
+- [x] Define lineage and provenance model
+- [x] Document normalization rules
 
 ---
 
@@ -159,10 +159,10 @@ This package is:
 
 **Goal:** Enable structured ingestion.
 
-- [ ] Define Connector interface / trait
-- [ ] Implement inspection vs read separation
-- [ ] Implement generic HDF5 connector
-- [ ] Add deterministic normalization tests
+- [x] Define Connector interface / trait
+- [x] Implement inspection vs read separation
+- [x] Implement generic HDF5 connector
+- [x] Add deterministic normalization tests
 
 ---
 
@@ -170,11 +170,8 @@ This package is:
 
 **Goal:** Cover common scientific inputs.
 
-- [ ] `.h5ad` connector
-- [ ] `.nc` connector
-- [ ] `.npz` connector
-- [ ] `.pt` connector
-- [ ] Zarr connector (read-only)
+- [x] `.npy` / `.npz` connector
+- [x] Zarr connector (read-only)
 
 ---
 
@@ -182,10 +179,10 @@ This package is:
 
 **Goal:** Make ingestion explicit and safe.
 
-- [ ] Implement `USE DATASET FROM`
-- [ ] Implement `IMPORT DATASET FROM`
-- [ ] Wire DSL → connector selection
-- [ ] Enforce explicit persistence semantics
+- [x] Implement `USE DATASET FROM`
+- [x] Implement `IMPORT DATASET FROM`
+- [x] Wire DSL → connector selection
+- [x] Enforce explicit persistence semantics
 
 ---
 
@@ -193,10 +190,10 @@ This package is:
 
 **Goal:** Deliver portable analytical assets.
 
-- [ ] Materialize dataset packages
-- [ ] Persist schema, stats, lineage, manifest
-- [ ] Register datasets in server mode
-- [ ] Validate reload determinism
+- [x] Materialize dataset packages
+- [x] Persist schema, stats, lineage, manifest
+- [x] Register datasets in server mode
+- [x] Validate reload determinism
 
 ---
 

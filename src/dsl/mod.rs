@@ -263,7 +263,11 @@ pub fn execute_line_with_context(
             })
         }
     } else if line.starts_with("USE ") {
-        handlers::instance::handle_use_database(db, line, line_no)
+        if line.starts_with("USE DATASET FROM ") {
+            handlers::persistence::handle_use_dataset(db, line, line_no)
+        } else {
+            handlers::instance::handle_use_database(db, line, line_no)
+        }
     } else if line.starts_with("DROP ") {
         if line.starts_with("DROP DATABASE ") {
             handlers::instance::handle_drop_database(db, line, line_no)

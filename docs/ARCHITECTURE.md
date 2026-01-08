@@ -161,7 +161,13 @@ The core module contains fundamental data structures and abstractions:
 - **StorageEngine**: Trait for persistence abstraction
 - **ParquetStorage**: Parquet-based dataset persistence
 - **JsonStorage**: JSON-based tensor persistence
-- **CsvStorage**: CSV-based import/export with schema inference
+- **CsvStorage**: CSV-based import/export with schema inference (Legacy)
+
+#### `connectors/` (Scientific Ingestion)
+
+- **Connector**: Trait for format-specific ingestion (translation only).
+- **ConnectorRegistry**: Global registry for format handlers.
+- **CsvConnector**: High-performance Arrow-based CSV ingestion.
 
 ### 2. Engine Module (`src/engine/`)
 
@@ -365,7 +371,18 @@ GROUP BY queries:
 - **Reverse Integration**: Results of any tensor operation can be added back to a dataset as a new column, maintaining the zero-copy chain.
 - **Persistence**: While primarily in-memory views, they can be persisted to Parquet using the `SAVE DATASET` command, which triggers on-demand materialization.
 
-#### Safety & Integrity
+#### Scientific Dataset Ingestion
+
+LINAL implements a connector-based architecture for high-performance scientific data (HDF5, Numpy, Zarr, CSV, etc.):
+
+1. **Connector Isolation**: Connectors are responsible ONLY for translating external formats into Arrow `RecordBatch`es.
+2. **Ephemeral Context (USE)**: `USE DATASET FROM` loads data directly into memory as tensors and registers a temporary dataset view. No persistence on disk.
+3. **Persistent Normalization (IMPORT)**: `IMPORT DATASET FROM` translates the source, normalizes it into a LINAL Dataset Package (Parquet + Metadata), and persists it for future use.
+4. **Reproducibility**: Source path and format are tracked in `DatasetOrigin` metadata.
+5. **Format Support**:
+   - **HDF5**: Recursive group traversal and flattening.
+   - **Numpy**: Direct ingestion of `.npy` and multi-array `.npz`.
+   - **Zarr**: Full support for V3 stores and hierarchical data.
 
 - **Row Count Validation**: The engine strictly enforces that all columns within a tensor-first dataset have a consistent "row count" (dimension 0 of the tensor). This prevents malformed data from entering analytical pipelines.
 - **Dangling Reference Detection**: Since datasets reference tensors by `TensorId`, the engine performs on-demand audits. The `SHOW` command generates **Health Warnings** if a dataset column points to a tensor that has been deleted from the `TensorStore`.

@@ -1,7 +1,12 @@
-use crate::core::dataset::{DatasetMetadata, DatasetOrigin};
-use crate::core::storage::{CsvStorage, ParquetStorage, StorageEngine};
+use crate::core::connectors::{
+    csv_connector::CsvConnector, hdf5_connector::Hdf5Connector, numpy_connector::NumpyConnector,
+    zarr_connector::ZarrConnector, ConnectorRegistry,
+};
+use crate::core::dataset::{Dataset, DatasetMetadata, DatasetOrigin, ResourceReference};
+use crate::core::storage::{record_batch_to_tensors, CsvStorage, ParquetStorage, StorageEngine};
 use crate::dsl::{DslError, DslOutput};
 use crate::engine::TensorDb;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -529,18 +534,166 @@ fn handle_list_tensors_impl(
     Ok(DslOutput::Message(message))
 }
 
-/// Handle IMPORT CSV command
-/// Syntax: IMPORT CSV FROM "path" [AS dataset_name]
-pub fn handle_import(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
-    let rest = line.strip_prefix("IMPORT ").unwrap().trim();
+/// Helper to get a connector registry with default connectors
+pub fn get_connector_registry() -> ConnectorRegistry {
+    let mut registry = ConnectorRegistry::new();
+    registry.register(Box::new(CsvConnector::new()));
+    registry.register(Box::new(NumpyConnector));
+    registry.register(Box::new(Hdf5Connector));
+    registry.register(Box::new(ZarrConnector));
+    registry
+}
 
-    if !rest.starts_with("CSV ") {
-        return Err(DslError::Parse {
+pub fn handle_use_dataset(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
+    let rest = line.strip_prefix("USE DATASET FROM ").unwrap().trim();
+
+    // Parse: "path" [AS dataset_name]
+    let (path_str, name_override) = if let Some(as_idx) = rest.find(" AS ") {
+        let path = rest[..as_idx].trim().trim_matches('"');
+        let name = rest[as_idx + 4..].trim();
+        (path, Some(name))
+    } else {
+        (rest.trim_matches('"'), None)
+    };
+
+    let registry = get_connector_registry();
+    let connector = registry
+        .find_connector(path_str)
+        .ok_or_else(|| DslError::Parse {
             line: line_no,
-            msg: "Expected 'CSV' after 'IMPORT'".to_string(),
-        });
+            msg: format!("No connector found for path: {}", path_str),
+        })?;
+
+    let (batch, _lineage) = connector
+        .read_dataset(path_str)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Connector failed: {}", e),
+        })?;
+
+    let tensors = record_batch_to_tensors(&batch).map_err(|e| DslError::Parse {
+        line: line_no,
+        msg: format!("Failed to convert to tensors: {}", e),
+    })?;
+
+    let ds_name = name_override.unwrap_or_else(|| {
+        Path::new(path_str)
+            .file_stem()
+            .and_then(OsStr::to_str)
+            .unwrap_or("ephemeral_ds")
+    });
+
+    let mut ds = Dataset::new(ds_name);
+    for (col_name, tensor) in tensors {
+        let tensor_id = tensor.id;
+        let tensor_shape = tensor.shape.clone();
+
+        // In ephemeral mode, we might want to prefix these tensors to avoid collision
+        // but for now we follow the "load into store" pattern.
+        db.active_instance_mut()
+            .insert_tensor_object(format!("{}_{}", ds_name, col_name), tensor)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?;
+
+        let value_type = match tensor_shape.rank() {
+            1 => crate::core::value::ValueType::Vector(tensor_shape.dims[0]),
+            2 => crate::core::value::ValueType::Matrix(tensor_shape.dims[0], tensor_shape.dims[1]),
+            0 => crate::core::value::ValueType::Float,
+            _ => crate::core::value::ValueType::Vector(tensor_shape.num_elements()),
+        };
+
+        let schema =
+            crate::core::dataset::ColumnSchema::new(col_name.clone(), value_type, tensor_shape);
+        ds.add_column(col_name, ResourceReference::tensor(tensor_id), schema);
     }
 
+    db.active_instance_mut().register_tensor_dataset(ds);
+
+    Ok(DslOutput::Table(
+        db.active_instance()
+            .materialize_tensor_dataset(ds_name)
+            .map_err(|e| DslError::Engine {
+                line: line_no,
+                source: e,
+            })?,
+    ))
+}
+
+pub fn handle_import_dataset(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
+    let rest = line.strip_prefix("IMPORT DATASET FROM ").unwrap().trim();
+
+    // Parse: "path" [AS dataset_name]
+    let (path_str, name_override) = if let Some(as_idx) = rest.find(" AS ") {
+        let path = rest[..as_idx].trim().trim_matches('"');
+        let name = rest[as_idx + 4..].trim();
+        (path, Some(name))
+    } else {
+        (rest.trim_matches('"'), None)
+    };
+
+    let registry = get_connector_registry();
+    let connector = registry
+        .find_connector(path_str)
+        .ok_or_else(|| DslError::Parse {
+            line: line_no,
+            msg: format!("No connector found for path: {}", path_str),
+        })?;
+
+    let (batch, lineage) = connector
+        .read_dataset(path_str)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Connector failed: {}", e),
+        })?;
+
+    let ds_name = name_override.unwrap_or_else(|| {
+        Path::new(path_str)
+            .file_stem()
+            .and_then(OsStr::to_str)
+            .unwrap_or("imported_ds")
+    });
+
+    // Persistent storage
+    let storage_path = resolve_persistence_path(db, "");
+    let storage = ParquetStorage::new(&storage_path);
+
+    let metadata = DatasetMetadata::new(
+        ds_name.to_string(),
+        DatasetOrigin::Imported {
+            source: path_str.to_string(),
+        },
+    );
+
+    storage
+        .save_dataset_package(ds_name, &batch, &metadata, &lineage)
+        .map_err(|e| DslError::Parse {
+            line: line_no,
+            msg: format!("Failed to save dataset package: {}", e),
+        })?;
+
+    Ok(DslOutput::Message(format!(
+        "Imported dataset '{}' and persisted to {}",
+        ds_name, storage_path
+    )))
+}
+
+/// Handle IMPORT CSV command (Legacy)
+pub fn handle_import_csv(
+    db: &mut TensorDb,
+    line: &str,
+    line_no: usize,
+) -> Result<DslOutput, DslError> {
+    let rest = line.strip_prefix("IMPORT ").unwrap().trim();
     let rest = rest.strip_prefix("CSV ").unwrap().trim();
 
     // Parse: FROM "path" [AS dataset_name]
@@ -594,6 +747,24 @@ pub fn handle_import(db: &mut TensorDb, line: &str, line_no: usize) -> Result<Ds
         "Imported {} rows from '{}' into dataset '{}'",
         row_count, path, final_name
     )))
+}
+
+/// Handle IMPORT command
+/// Syntax: IMPORT CSV FROM "path" [AS dataset_name]
+///         IMPORT DATASET FROM "path" [AS dataset_name]
+pub fn handle_import(db: &mut TensorDb, line: &str, line_no: usize) -> Result<DslOutput, DslError> {
+    let rest = line.strip_prefix("IMPORT ").unwrap().trim();
+
+    if rest.starts_with("CSV ") {
+        handle_import_csv(db, line, line_no)
+    } else if rest.starts_with("DATASET FROM ") {
+        handle_import_dataset(db, line, line_no)
+    } else {
+        Err(DslError::Parse {
+            line: line_no,
+            msg: "Expected 'CSV' or 'DATASET FROM' after 'IMPORT'".to_string(),
+        })
+    }
 }
 
 /// Handle EXPORT CSV command

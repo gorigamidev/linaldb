@@ -3,7 +3,7 @@ use crate::core::dataset::{
     DatasetSchema, DatasetStats, LineageNode,
 };
 use crate::core::dataset_legacy::{Dataset, DatasetMetadata as DatasetMetadataLegacy};
-use crate::core::tensor::Tensor;
+use crate::core::tensor::{Shape, Tensor, TensorId, TensorMetadata};
 use crate::core::tuple::{Schema, Tuple};
 use crate::core::value::{Value, ValueType};
 use arrow::array::{
@@ -433,6 +433,80 @@ fn arrow_array_to_values(
         }
         ValueType::Null => Ok(vec![Value::Null; num_rows]),
     }
+}
+
+/// Convert Arrow ArrayRef to f32 vector for LINAL tensors
+pub fn arrow_array_to_f32_vec(array: &ArrayRef) -> Result<Vec<f32>, StorageError> {
+    let num_rows = array.len();
+    if let Some(float_array) = array.as_any().downcast_ref::<Float32Array>() {
+        Ok((0..num_rows)
+            .map(|i| {
+                if float_array.is_null(i) {
+                    0.0
+                } else {
+                    float_array.value(i)
+                }
+            })
+            .collect())
+    } else if let Some(double_array) = array.as_any().downcast_ref::<Float64Array>() {
+        Ok((0..num_rows)
+            .map(|i| {
+                if double_array.is_null(i) {
+                    0.0
+                } else {
+                    double_array.value(i) as f32
+                }
+            })
+            .collect())
+    } else if let Some(int_array) = array.as_any().downcast_ref::<Int64Array>() {
+        Ok((0..num_rows)
+            .map(|i| {
+                if int_array.is_null(i) {
+                    0.0
+                } else {
+                    int_array.value(i) as f32
+                }
+            })
+            .collect())
+    } else if let Some(int_array) = array.as_any().downcast_ref::<Int32Array>() {
+        Ok((0..num_rows)
+            .map(|i| {
+                if int_array.is_null(i) {
+                    0.0
+                } else {
+                    int_array.value(i) as f32
+                }
+            })
+            .collect())
+    } else {
+        Err(StorageError::Serialization(format!(
+            "Unsupported Arrow type for tensor conversion: {:?}",
+            array.data_type()
+        )))
+    }
+}
+
+/// Convert RecordBatch to a list of named Tensors
+pub fn record_batch_to_tensors(batch: &RecordBatch) -> Result<Vec<(String, Tensor)>, StorageError> {
+    let mut tensors = Vec::new();
+    let num_rows = batch.num_rows();
+
+    for field in batch.schema().fields() {
+        let col_name = field.name();
+        let array = batch.column_by_name(col_name).ok_or_else(|| {
+            StorageError::Serialization(format!("Column {} missing in batch", col_name))
+        })?;
+
+        let data = arrow_array_to_f32_vec(array)?;
+        let shape = Shape::new(vec![num_rows]);
+        let id = TensorId::new();
+        let metadata = TensorMetadata::new(id, Some("ingestion".to_string()));
+        let tensor = Tensor::new(id, shape, data, metadata).map_err(StorageError::Serialization)?;
+
+        tensors.push((col_name.clone(), tensor));
+    }
+
+    Ok(tensors)
 }
 
 /// Convert Dataset to Arrow RecordBatch
