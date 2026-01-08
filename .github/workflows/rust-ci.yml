@@ -26,7 +26,8 @@ jobs:
       - name: Run tests
         env:
           CARGO_INCREMENTAL: 0
-        run: cargo test --verbose -j 2
+          RUSTFLAGS: "-C codegen-units=1"
+        run: cargo test --verbose -j 1 --release
 
   fmt:
     name: Format
