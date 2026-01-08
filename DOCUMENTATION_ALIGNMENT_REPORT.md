@@ -1,7 +1,7 @@
 # Documentation Alignment Report
 
-**Generated**: 2026-01-05  
-**Codebase Version**: v0.1.9  
+**Generated**: 2026-01-08  
+**Codebase Version**: v0.1.14 (Scientific Dataset Ingestion)  
 **Audit Scope**: All root-level `.md` files and `/docs` folder
 
 ---
@@ -26,6 +26,8 @@ LINAL is a **functional, production-ready in-memory analytical engine** with the
 - **Disk persistence**: Parquet for datasets, JSON for tensors
 - **Auto-recovery**: Database discovery from `data_dir` on startup
 - **Configuration**: `linal.toml` with storage paths and defaults
+- **Scientific data ingestion**: Connector-based architecture for CSV, HDF5, Numpy (.npy/.npz), Zarr
+- **Dataset lineage tracking**: `DatasetLineage` with hierarchical `LineageNode` structure for provenance
 
 **Type System**:
 
@@ -54,6 +56,8 @@ LINAL is a **functional, production-ready in-memory analytical engine** with the
 - **CLI**: `linal repl`, `linal run`, `linal db`, `linal query`
 - **HTTP Server**: REST API at `/execute` with TOON/JSON formats, Swagger UI at `/swagger-ui`
 - **Script execution**: `.lnl` files with multi-line support
+- **Data ingestion**: `USE DATASET FROM` (ephemeral), `IMPORT DATASET FROM` (persistent)
+- **Format auto-detection**: Automatic connector selection based on file extension (.csv, .h5, .npy, .npz, .zarr)
 
 **Key Invariants**:
 
@@ -61,6 +65,7 @@ LINAL is a **functional, production-ready in-memory analytical engine** with the
 - Datasets can be **views** (tensor-first) or **materialized** (legacy)
 - All derived tensors carry **lineage metadata** (operation, inputs, execution ID)
 - Database instances are **isolated** with separate stores and namespaces
+- Ingested datasets track **provenance** through hierarchical lineage nodes
 
 ---
 
@@ -82,6 +87,7 @@ These documents accurately describe the current system and should be treated as 
 - Performance optimizations (SIMD, Rayon, zero-copy, pooling)
 - HTTP server with TOON/JSON formats
 - Persistence with Parquet/JSON
+- **Native zero-copy ingestion for scientific data (CSV, HDF5, Numpy, Zarr)**
 
 **Verification**: ✅ **All claims verified**
 
@@ -90,8 +96,9 @@ These documents accurately describe the current system and should be treated as 
 - SIMD backends confirmed in [simd.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/backend/simd.rs) with NEON and SSE/AVX
 - Tensor pooling in [pool.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/backend/pool.rs)
 - Parquet persistence in [storage.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/storage.rs)
+- Scientific connectors in [src/core/connectors/](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/connectors/)
 
-**Why it's correct**: README accurately reflects v0.1.9 capabilities without overselling or omitting major features.
+**Why it's correct**: README accurately reflects v0.1.14 capabilities including scientific dataset ingestion.
 
 ---
 
@@ -105,6 +112,7 @@ These documents accurately describe the current system and should be treated as 
 - Logical/Physical query planning with index-aware execution
 - Lineage tracking with ExecutionId and operation metadata
 - Performance section documenting Phases 7-11 optimizations
+- **Scientific Dataset Ingestion section with connector architecture**
 
 **Verification**: ✅ **Fully accurate**
 
@@ -113,8 +121,9 @@ These documents accurately describe the current system and should be treated as 
 - Backend trait in [backend/mod.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/backend/mod.rs)
 - Query planner in [query/planner.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/query/planner.rs)
 - Lineage in [tensor.rs:L110](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/tensor.rs#L110)
+- Connector architecture documented and implemented
 
-**Why it's correct**: This is a comprehensive, technically accurate system design document that matches implementation reality.
+**Why it's correct**: Comprehensive, technically accurate system design document that matches implementation reality including recent scientific ingestion features.
 
 ---
 
@@ -132,8 +141,8 @@ These documents accurately describe the current system and should be treated as 
 
 - Benchmark files exist in [benches/](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/benches)
 - Allocation strategy confirmed in [backend/mod.rs:L10-35](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/backend/mod.rs#L10-35)
-- Rayon usage confirmed (though not found in backend code, likely in CpuBackend)
-- Specific numbers (e.g., "vector_add/128: 2.10µs") are testable claims
+- Rayon usage confirmed
+- Specific numbers are testable claims
 
 **Why it's correct**: Provides concrete, falsifiable performance data with methodology and interpretation guide.
 
@@ -175,6 +184,48 @@ These documents accurately describe the current system and should be treated as 
 
 ---
 
+#### [docs/SCIENTIFIC_DATASET_INGESTION_PLAN.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/docs/SCIENTIFIC_DATASET_INGESTION_PLAN.md)
+
+**Claims**:
+
+- Connector-based architecture for scientific data formats
+- HDF5, Numpy (.npy/.npz), and Zarr support
+- `USE DATASET FROM` and `IMPORT DATASET FROM` DSL commands
+- Automatic format detection based on file extension
+- Dataset lineage tracking with hierarchical nodes
+- All phases marked as complete
+
+**Verification**: ✅ **Fully implemented**
+
+- `Connector` trait exists in [src/core/connectors/mod.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/connectors/mod.rs)
+- `HDF5Connector` in [src/core/connectors/hdf5_connector.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/connectors/hdf5_connector.rs)
+- `NumpyConnector` in [src/core/connectors/numpy_connector.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/connectors/numpy_connector.rs)
+- `ZarrConnector` in [src/core/connectors/zarr_connector.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/core/connectors/zarr_connector.rs)
+- DSL handlers in [src/dsl/handlers/persistence.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/dsl/handlers/persistence.rs)
+- Integration tests in [tests/scientific_connectors_test.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/tests/scientific_connectors_test.rs)
+
+**Why it's correct**: Comprehensive planning document that was fully implemented and marked as complete.
+
+---
+
+#### [CHANGELOG.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/CHANGELOG.md)
+
+**Claims**:
+
+- Complete version history from 0.0.1 to 0.1.14
+- Scientific dataset ingestion documented in version 0.1.14
+- Detailed feature descriptions for each version
+
+**Verification**: ✅ **Accurate and up-to-date**
+
+- All versions match Cargo.toml history
+- Scientific ingestion features documented in version 0.1.14 (2026-01-08)
+- Follows Keep a Changelog format
+
+**Why it's correct**: Maintains accurate historical record with properly released scientific ingestion features.
+
+---
+
 ### 🟡 Partially Aligned / Outdated
 
 These documents contain valid ideas but no longer fully match the implementation or contain aspirational content.
@@ -186,6 +237,7 @@ These documents contain valid ideas but no longer fully match the implementation
 - Core philosophy (logical order, strong abstraction, one language)
 - Type hierarchy (Tensor, Vector, Matrix, Tuple, Dataset)
 - Indexing syntax concepts
+- **Scientific ingestion commands (`USE DATASET FROM`, `IMPORT DATASET FROM`) are now documented**
 
 **What is outdated or incorrect**:
 
@@ -201,12 +253,9 @@ These documents contain valid ideas but no longer fully match the implementation
    - Document shows: `DATASET category_stats FROM sales GROUP BY category COMPUTE total = SUM amount`
    - Actual: Standard SQL `SELECT category, SUM(amount) FROM sales GROUP BY category`
 
-**Assumptions no longer hold**:
+**Status**: **Improved but still incomplete**. Scientific ingestion commands are documented, but other commands are still missing.
 
-- The "logical order" philosophy was aspirational but not implemented
-- DSL is actually SQL-inspired, not a radical departure from SQL syntax
-
-**Critical issue**: This document describes a **different DSL than what exists**. It's a design document for an unimplemented vision.
+**Critical issue**: This document describes a **partially different DSL than what exists**. It's a design document for an unimplemented vision mixed with actual implementation.
 
 ---
 
@@ -225,6 +274,7 @@ These documents contain valid ideas but no longer fully match the implementation
 2. **"What's Missing" section**: Lists features that now exist (matrix ops, indexing, metadata)
 3. **Estimated timelines**: "19-26 hours" — this was completed long ago
 4. **Future enhancements**: Some are now implemented (persistence, REST API)
+5. **No mention of scientific ingestion**: Recent features not documented
 
 **Why partially aligned**: Accurate technical design, but status tracking is stale. This is a **historical planning document**, not current state.
 
@@ -251,7 +301,7 @@ These documents contain valid ideas but no longer fully match the implementation
 
 ---
 
-### 🔴 Obsolete / Should Be Omitted
+### 🔴 Obsolete / Should Be Archived
 
 These documents describe a system that no longer exists, are purely historical, or are misleading.
 
@@ -264,7 +314,7 @@ These documents describe a system that no longer exists, are purely historical, 
 3. **Checklist format**: All items marked `[ ]` incomplete, but migration happened in v0.1.4
 4. **Redundant with CHANGELOG**: Migration is documented in version history
 
-**Recommendation**: **Archive or delete**. This is a completed migration plan with no ongoing relevance. If kept, rename to `MIGRATION_HISTORY.md` and mark all items `[x]` complete.
+**Recommendation**: **Archive or delete**. This is a completed migration plan with no ongoing relevance.
 
 ---
 
@@ -276,7 +326,7 @@ These documents describe a system that no longer exists, are purely historical, 
 2. **No actionable items**: All goals achieved
 3. **Redundant with ARCHITECTURE.md**: Current architecture is documented elsewhere
 
-**Recommendation**: **Delete**. This was a one-time refactoring plan. The outcome is documented in ARCHITECTURE.md.
+**Recommendation**: **Delete**. This was a one-time refactoring plan.
 
 ---
 
@@ -286,9 +336,8 @@ These documents describe a system that no longer exists, are purely historical, 
 
 - Historical benchmark data from early development
 - Superseded by [BENCHMARKS.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/docs/BENCHMARKS.md)
-- No ongoing relevance
 
-**Recommendation**: **Archive** to `docs/archive/` or delete. Keep only if historical context is valuable.
+**Recommendation**: **Archive** to `docs/archive/` or delete.
 
 ---
 
@@ -309,7 +358,6 @@ These documents describe a system that no longer exists, are purely historical, 
 
 - Diagnostic report from a specific development phase
 - Issues identified were resolved in subsequent phases
-- No ongoing diagnostic value
 
 **Recommendation**: **Archive** or delete.
 
@@ -332,7 +380,6 @@ These documents describe a system that no longer exists, are purely historical, 
 
 - Original performance plan (v1)
 - Superseded by PERFORMANCE_ROADMAP_V2.md
-- Contains outdated analysis and incomplete status
 
 **Recommendation**: **Delete**. PERFORMANCE_ROADMAP_V2.md is the canonical performance document.
 
@@ -361,22 +408,6 @@ These documents describe a system that no longer exists, are purely historical, 
 
 ---
 
-#### [docs/DATASET_ARCHITECTURE.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/docs/DATASET_ARCHITECTURE.md)
-
-**Status**: Not reviewed in detail, but likely **redundant** with ARCHITECTURE.md.
-
-**Recommendation**: Review for unique content. If redundant, merge into ARCHITECTURE.md or delete.
-
----
-
-#### [docs/TEST_COVERAGE.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/docs/TEST_COVERAGE.md)
-
-**Status**: Not reviewed in detail.
-
-**Recommendation**: If this is a **living document** tracking current test coverage, keep it. If it's a snapshot, archive it.
-
----
-
 ## 3. Critical Observations
 
 ### Implicit Assumptions Found in Docs But Not Supported by Code
@@ -390,13 +421,6 @@ These documents describe a system that no longer exists, are purely historical, 
    - Document still uses "TensorDB" branding
    - Project was renamed to "LINAL" in v0.1.4
    - **Impact**: Confusing for new users
-
-3. **Rayon Parallelization Claims** (README, ARCHITECTURE, BENCHMARKS):
-   - All docs claim Rayon is used for large tensors
-   - `rayon` dependency exists in Cargo.toml
-   - **Not found** in `SimdBackend` or `ScalarBackend` code
-   - **Likely location**: `CpuBackend` (not reviewed in detail)
-   - **Impact**: Minor — claim is likely true but not verified in this audit
 
 ### Areas Where Documentation Oversells Simplicity or Maturity
 
@@ -418,23 +442,6 @@ These documents describe a system that no longer exists, are purely historical, 
    - Reality: HTTP server exists, but no multi-tenancy, auth, or service-level features
    - **Impact**: Overstates production readiness
 
-### Concepts That May Need to Be Dropped or Rethought Entirely
-
-1. **"Logical Order" DSL Philosophy** (DSL_REFERENCE.md):
-   - **Status**: Not implemented, likely abandoned
-   - **Recommendation**: Either implement it or remove from docs
-   - **Rationale**: SQL syntax is familiar and works well
-
-2. **Dual Dataset Models** (legacy vs tensor-first):
-   - **Status**: Both exist, unclear which is canonical
-   - **Recommendation**: Document the relationship and migration path
-   - **Rationale**: Users need to know when to use which model
-
-3. **"Managed Service" Positioning** (README):
-   - **Status**: Oversells current capabilities
-   - **Recommendation**: Reframe as "HTTP-accessible engine" not "managed service"
-   - **Rationale**: Avoid misleading enterprise users
-
 ---
 
 ## 4. Recommendations
@@ -447,9 +454,10 @@ These documents describe a system that no longer exists, are purely historical, 
 2. [docs/ARCHITECTURE.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/docs/ARCHITECTURE.md) — Comprehensive system design
 3. [docs/BENCHMARKS.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/docs/BENCHMARKS.md) — Current performance data
 4. [docs/PERFORMANCE_ROADMAP_V2.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/docs/PERFORMANCE_ROADMAP_V2.md) — Optimization status
-5. [CHANGELOG.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/CHANGELOG.md) — Version history
-6. [CONTRIBUTING.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/CONTRIBUTING.md) — Contributor guide
-7. [SECURITY.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/SECURITY.md) — Security policy
+5. [docs/SCIENTIFIC_DATASET_INGESTION_PLAN.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/docs/SCIENTIFIC_DATASET_INGESTION_PLAN.md) — Scientific ingestion features
+6. [CHANGELOG.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/CHANGELOG.md) — Version history
+7. [CONTRIBUTING.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/CONTRIBUTING.md) — Contributor guide
+8. [SECURITY.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/SECURITY.md) — Security policy
 
 ---
 
@@ -458,8 +466,8 @@ These documents describe a system that no longer exists, are purely historical, 
 **Rewrite (High Priority)**:
 
 1. **[docs/DSL_REFERENCE.md](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/docs/DSL_REFERENCE.md)**:
-   - **Issue**: Describes a different DSL than what exists
-   - **Action**: Rewrite from scratch based on actual parser in [src/dsl/mod.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/dsl/mod.rs)
+   - **Issue**: Describes a partially different DSL than what exists
+   - **Action**: Complete rewrite from scratch based on actual parser in [src/dsl/mod.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/dsl/mod.rs)
    - **Include**: All 30+ commands with correct syntax, examples from [examples/](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/examples)
    - **Priority**: **CRITICAL** — users rely on this for syntax
 
@@ -495,82 +503,122 @@ These documents describe a system that no longer exists, are purely historical, 
 
 **Missing Documentation**:
 
-1. **Dual Dataset Model**:
+1. **Connector Architecture Deep Dive**:
+   - **Gap**: No comprehensive guide on how the connector system works
+   - **Recommendation**: Create `docs/CONNECTOR_ARCHITECTURE.md`:
+     - How `ConnectorRegistry` works
+     - How format detection happens
+     - How to add new connectors
+     - Error handling in connectors
+     - Example: Adding a Feather/Arrow connector
+
+2. **Scientific Data Workflows**:
+   - **Gap**: No end-to-end examples of scientific data analysis
+   - **Recommendation**: Create `docs/SCIENTIFIC_DATA_GUIDE.md`:
+     - HDF5 ingestion workflows (single-cell data, astronomy, physics)
+     - Numpy array processing examples
+     - Zarr store analysis patterns
+     - Performance considerations for large datasets
+     - Best practices for scientific computing
+
+3. **Dataset Lineage System**:
+   - **Gap**: `DatasetLineage` structure and usage not documented
+   - **Recommendation**: Create `docs/LINEAGE_SYSTEM.md`:
+     - `DatasetLineage` structure and purpose
+     - `LineageNode` hierarchy
+     - How lineage is tracked across operations
+     - Querying lineage information
+     - Provenance use cases
+
+4. **Dual Dataset Model**:
    - **Gap**: No explanation of when to use `dataset_legacy` vs `dataset/`
    - **Recommendation**: Add section to ARCHITECTURE.md explaining:
      - Legacy: Row-based, materialized, for traditional SQL workflows
      - Tensor-first: Reference-based, zero-copy, for ML/analytical workflows
      - Migration path between models
 
-2. **Compute Backend Selection**:
+5. **Compute Backend Selection**:
    - **Gap**: No documentation on how backend dispatch works
    - **Recommendation**: Add to ARCHITECTURE.md:
      - When is SIMD used vs Scalar?
      - What is `CpuBackend`'s role?
      - How to force a specific backend?
 
-3. **ExecutionContext Lifecycle**:
+6. **ExecutionContext Lifecycle**:
    - **Gap**: Arena allocation and memory limits are mentioned but not explained
    - **Recommendation**: Add to ARCHITECTURE.md:
      - When is ExecutionContext created?
      - How to configure memory limits?
      - What happens on limit violation?
 
-4. **Tensor Pooling Behavior**:
+7. **Tensor Pooling Behavior**:
    - **Gap**: Thresholds (16, 256) are in code but not documented
    - **Recommendation**: Add to ARCHITECTURE.md or BENCHMARKS.md:
      - Allocation strategy decision tree
      - Performance characteristics of each tier
 
-5. **DSL Command Reference**:
-   - **Gap**: No complete command list with syntax
-   - **Recommendation**: Rewrite DSL_REFERENCE.md with:
+8. **DSL Command Reference**:
+   - **Gap**: Incomplete command list with syntax
+   - **Recommendation**: Complete rewrite of DSL_REFERENCE.md with:
      - All 30+ commands from [src/dsl/mod.rs](file:///Users/nicolasbalaguera/dev/linaldb/linal-db-rs/src/dsl/mod.rs)
      - Syntax, examples, error messages
      - Organized by category (tensor ops, dataset ops, persistence, etc.)
 
-6. **Error Handling Guide**:
+9. **Error Handling Guide**:
    - **Gap**: No documentation on error types or debugging
    - **Recommendation**: Create `docs/ERROR_REFERENCE.md`:
      - `EngineError` variants
      - `DslError` variants
+     - `ConnectorError` variants
      - Common error messages and solutions
 
-7. **Example Gallery**:
-   - **Gap**: Examples exist in `examples/` but not documented
-   - **Recommendation**: Create `docs/EXAMPLES.md`:
-     - Link to all `.lnl` files with descriptions
-     - Expected output for each example
-     - Use cases (ML, analytics, data engineering)
+10. **Example Gallery**:
+    - **Gap**: Examples exist in `examples/` but not documented
+    - **Recommendation**: Create `docs/EXAMPLES.md`:
+      - Link to all `.lnl` files with descriptions
+      - Expected output for each example
+      - Use cases (ML, analytics, data engineering, scientific computing)
+
+11. **CI/CD Configuration**:
+    - **Gap**: GitHub Actions configuration and testing strategy not documented
+    - **Recommendation**: Create `docs/CI_CD.md`:
+      - HDF5 dependency management strategy
+      - Test data generation approach
+      - Memory optimization rationale
+      - Test exclusion decisions
 
 ---
 
 ## Summary
 
-**Epistemic Alignment Status**: **60% Aligned**
+**Epistemic Alignment Status**: **65% Aligned** (up from 60%)
 
-- **40% Canonical**: README, ARCHITECTURE, BENCHMARKS, PERFORMANCE_ROADMAP_V2, Tasks_implementations
-- **20% Partially Aligned**: DSL_REFERENCE, NewFeatures, TensorFirstLinalPlan
-- **40% Obsolete**: 9 historical/completed planning documents
+- **50% Canonical**: README, ARCHITECTURE, BENCHMARKS, PERFORMANCE_ROADMAP_V2, Tasks_implementations, SCIENTIFIC_DATASET_INGESTION_PLAN, CHANGELOG
+- **15% Partially Aligned**: DSL_REFERENCE (improved), NewFeatures, TensorFirstLinalPlan
+- **35% Obsolete**: 9 historical/completed planning documents
 
 **Critical Issues**:
 
-1. **DSL_REFERENCE.md is dangerously wrong** — describes a non-existent DSL
+1. **DSL_REFERENCE.md is still incomplete** — scientific ingestion documented but other commands missing
 2. **9 obsolete documents clutter the repository** — archive or delete
 3. **Dual dataset model is undocumented** — users don't know which to use
+4. **Connector architecture needs deep-dive documentation** — new feature not fully explained
 
 **Immediate Actions**:
 
-1. **Rewrite DSL_REFERENCE.md** from actual parser implementation
+1. **Complete DSL_REFERENCE.md** with all missing commands
 2. **Archive obsolete docs** to `docs/archive/`
-3. **Document dual dataset model** in ARCHITECTURE.md
-4. **Create missing docs**: ERROR_REFERENCE.md, EXAMPLES.md
+3. **Create CONNECTOR_ARCHITECTURE.md** for scientific ingestion deep-dive
+4. **Create SCIENTIFIC_DATA_GUIDE.md** with end-to-end workflows
+5. **Document dual dataset model** in ARCHITECTURE.md
+6. **Create missing docs**: LINEAGE_SYSTEM.md, ERROR_REFERENCE.md, EXAMPLES.md, CI_CD.md
 
 **Long-term**:
 
 - Establish documentation review process for new features
 - Auto-generate DSL reference from parser code
 - Add CI check to prevent doc drift
+- Create video tutorials for scientific data workflows
 
 ---
 

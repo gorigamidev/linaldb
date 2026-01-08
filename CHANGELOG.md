@@ -5,6 +5,40 @@ All notable changes to LINAL will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-01-08
+
+### Added - Scientific Dataset Ingestion
+
+- **Connector Architecture**
+  - Implemented `Connector` trait for pluggable data format support
+  - `ConnectorRegistry` for automatic format detection and connector management
+  - Automatic format detection based on file extension
+- **Scientific Format Support**
+  - `HDF5Connector` for HDF5 files (.h5, .h5ad) with recursive group traversal
+  - `NumpyConnector` for Numpy files (.npy single arrays, .npz archives)
+  - `ZarrConnector` for Zarr stores with group and array support
+  - `CsvConnector` refactored to use new connector architecture
+- **DSL Integration**
+  - `USE DATASET FROM "path"` - Load external data as ephemeral tensors and dataset view
+  - `IMPORT DATASET FROM "path" AS name` - Persist external data to Parquet with full metadata
+  - Format auto-detection for CSV, HDF5, Numpy, and Zarr files
+- **Dataset Lineage Tracking**
+  - `DatasetLineage` with hierarchical `LineageNode` structure
+  - Provenance tracking for all ingested datasets
+  - Lineage metadata saved alongside dataset packages
+
+### Changed
+
+- Updated `docs/DSL_REFERENCE.md` with scientific ingestion commands
+- Updated `docs/ARCHITECTURE.md` with connector architecture section
+- Updated `README.md` to highlight scientific data ingestion capabilities
+
+### Fixed
+
+- CI/CD pipeline stability with HDF5 dependency management
+- Test data generation for scientific connectors in GitHub Actions
+- Memory optimization for resource-constrained CI runners
+
 ## [0.1.13] - 2026-01-07
 
 ### Added - Phase 16: Dataset Delivery & Server Exposure
@@ -521,6 +555,9 @@ LINAL is positioned as:
 
 ---
 
+[0.1.14]: https://github.com/gorigami/linal/compare/v0.1.13...v0.1.14
+[0.1.13]: https://github.com/gorigami/linal/compare/v0.1.12...v0.1.13
+[0.1.12]: https://github.com/gorigami/linal/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/gorigami/linal/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/gorigami/linal/compare/v0.1.9...v0.1.10
 [0.1.8]: https://github.com/gorigami/linal/compare/v0.1.7...v0.1.8
