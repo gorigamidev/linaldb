@@ -19,10 +19,14 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install HDF5
         run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
+      - name: Check disk space
+        run: df -h
       - name: Generate test data
         run: cargo run --example gen_test_data && cargo run --example gen_zarr_data
       - name: Run tests
-        run: cargo test --verbose
+        env:
+          CARGO_INCREMENTAL: 0
+        run: cargo test --verbose -j 2
 
   fmt:
     name: Format
