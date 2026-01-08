@@ -23,16 +23,12 @@ jobs:
         run: df -h
       - name: Generate test data
         run: cargo run --example gen_test_data && cargo run --example gen_zarr_data
-      - name: Build binary
-        env:
-          CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-C codegen-units=1"
-        run: cargo build --release -j 1
       - name: Run tests
         env:
           CARGO_INCREMENTAL: 0
           RUSTFLAGS: "-C codegen-units=1"
         run: cargo test --verbose -j 1 --release -- --skip cli_hardening_test
+
 
   fmt:
     name: Format
