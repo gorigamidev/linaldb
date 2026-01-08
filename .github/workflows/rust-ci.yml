@@ -19,6 +19,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install HDF5
         run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
+      - name: Generate test data
+        run: cargo run --example gen_test_data && cargo run --example gen_zarr_data
       - name: Run tests
         run: cargo test --verbose
 
@@ -60,6 +62,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libhdf5-dev
       - name: Build Release
         run: cargo build --release
+      - name: Generate test data
+        run: cargo run --example gen_test_data && cargo run --example gen_zarr_data
       - name: Run Smoke Test Script
         run: ./target/release/linal run examples/smoke_test.lnl
       - name: Check data persistence
